@@ -68,7 +68,7 @@ func TestCmdStop(t *testing.T) {
 	// it's not then timeout below will trigger.
 	p := cmd.NewCmd("./test/count-and-sleep", "3", "5")
 
-	// Start process in bg and get chan to recieve final Status when done
+	// Start process in bg and get chan to receive final Status when done
 	statusChan := p.Start()
 
 	// Give it a second
