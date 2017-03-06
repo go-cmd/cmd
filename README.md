@@ -1,6 +1,6 @@
 # go-cmd/Cmd
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/go-cmd/cmd)](https://goreportcard.com/report/github.com/go-cmd/cmd) [![GoDoc](https://godoc.org/github.com/go-cmd/cmd?status.svg)](https://godoc.org/github.com/go-cmd/cmd)
+[![Go Report Card](https://goreportcard.com/badge/github.com/go-cmd/cmd)](https://goreportcard.com/report/github.com/go-cmd/cmd) [![Build Status](https://travis-ci.org/go-cmd/cmd.svg?branch=master)](https://travis-ci.org/go-cmd/cmd) [![GoDoc](https://godoc.org/github.com/go-cmd/cmd?status.svg)](https://godoc.org/github.com/go-cmd/cmd)
 
 This package is a small but very useful wrapper around [os/exec.Cmd](https://golang.org/pkg/os/exec/#Cmd) that makes it dead simple and safe to run commands in asynchronous, highly concurrent, real-time applications. Here's the look and feel:
 
