@@ -47,6 +47,8 @@ type cmp struct {
 	floatFormat string
 }
 
+var errorType = reflect.TypeOf((*error)(nil)).Elem()
+
 // Equal compares variables a and b, recursing into their structure up to
 // MaxDepth levels deep, and returns a list of differences, or nil if there are
 // none. Some differences may not be found if an error is also returned.
@@ -74,6 +76,7 @@ func (c *cmp) equals(a, b reflect.Value, level int) {
 		return
 	}
 
+	// If differenet types, they can't be equal
 	aType := a.Type()
 	bType := b.Type()
 	if aType != bType {
@@ -82,8 +85,25 @@ func (c *cmp) equals(a, b reflect.Value, level int) {
 		return
 	}
 
+	// Primitive https://golang.org/pkg/reflect/#Kind
 	aKind := a.Kind()
 	bKind := b.Kind()
+
+	// If both types implement the error interface, compare the error strings.
+	// This must be done before dereferencing because the interface is on a
+	// pointer receiver.
+	if aType.Implements(errorType) && bType.Implements(errorType) {
+		if a.Elem().IsValid() && b.Elem().IsValid() { // both err != nil
+			aString := a.MethodByName("Error").Call(nil)[0].String()
+			bString := b.MethodByName("Error").Call(nil)[0].String()
+			if aString != bString {
+				c.saveDiff(aString, bString)
+			}
+			return
+		}
+	}
+
+	// Dereference pointers and interface{}
 	if aKind == reflect.Ptr || aKind == reflect.Interface {
 		a = a.Elem()
 		aKind = a.Kind()
@@ -98,7 +118,7 @@ func (c *cmp) equals(a, b reflect.Value, level int) {
 		}
 	}
 
-	// For example: T{x: *X} and T.x is nil.
+	// Check if one value is nil, e.g. T{x: *X} and T.x is nil
 	if !a.IsValid() || !b.IsValid() {
 		if a.IsValid() && !b.IsValid() {
 			c.saveDiff(aType, "<nil pointer>")
