@@ -243,7 +243,7 @@ func TestCmdLost(t *testing.T) {
 	// Get the PID and kill it
 	s := p.Status()
 	if s.PID <= 0 {
-		t.Fatal("got PID %d, expected PID > 0", s.PID)
+		t.Fatalf("got PID %d, expected PID > 0", s.PID)
 	}
 	pgid, err := syscall.Getpgid(s.PID)
 	if err != nil {
