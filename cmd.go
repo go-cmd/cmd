@@ -31,15 +31,22 @@ type Cmd struct {
 }
 
 // Status represents the status of a Cmd. It is valid during the entire lifecycle
-// of the command. If the command completes successfully, Complete is true, Exit
-// is zero, Error is nil, and Runtime is > 0. If PID is non-zero and Runtime > 0,
-// the command is running.
+// of the command. If StartTs > 0 (or PID > 0), the command has started. If
+// StopTs > 0, the command has stopped. After the command has stopped, Exit = 0
+// is usually enough to indicate success, but complete success is indicated by:
+//   Exit     = 0
+//   Error    = nil
+//   Complete = true
+// If Complete is false, the command was stopped or timed out. Error is a Go
+// error related to starting or running the command.
 type Status struct {
 	Cmd      string
 	PID      int
-	Complete bool
-	Exit     int
-	Error    error
+	Complete bool    // false if stopped or signaled
+	Exit     int     // exit code of process
+	Error    error   // Go error
+	StartTs  int64   // Unix ts (nanoseconds)
+	StopTs   int64   // Unix ts (nanoseconds)
 	Runtime  float64 // seconds
 	Stdout   []string
 	Stderr   []string
@@ -175,9 +182,12 @@ func (c *Cmd) run() {
 	// //////////////////////////////////////////////////////////////////////
 	// Start command
 	// //////////////////////////////////////////////////////////////////////
+	now := time.Now()
 	if err := cmd.Start(); err != nil {
 		c.Lock()
 		c.status.Error = err
+		c.status.StartTs = now.UnixNano()
+		c.status.StopTs = time.Now().UnixNano()
 		c.done = true
 		c.Unlock()
 		return
@@ -185,8 +195,9 @@ func (c *Cmd) run() {
 
 	// Set initial status
 	c.Lock()
-	c.startTime = time.Now()       // command is running
+	c.startTime = now              // command is running
 	c.status.PID = cmd.Process.Pid // command is running
+	c.status.StartTs = now.UnixNano()
 	c.started = true
 	c.Unlock()
 
@@ -221,6 +232,7 @@ func (c *Cmd) run() {
 		c.status.Complete = true
 	}
 	c.status.Runtime = time.Now().Sub(c.startTime).Seconds()
+	c.status.StopTs = time.Now().UnixNano()
 	c.status.Exit = exitCode
 	c.status.Error = err
 	c.done = true

@@ -14,6 +14,8 @@ import (
 )
 
 func TestCmdOK(t *testing.T) {
+	now := time.Now().Unix()
+
 	p := cmd.NewCmd("echo", "foo")
 	gotStatus := <-p.Start()
 	expectStatus := cmd.Status{
@@ -26,6 +28,14 @@ func TestCmdOK(t *testing.T) {
 		Stdout:   []string{"foo"},
 		Stderr:   []string{},
 	}
+	if gotStatus.StartTs < now {
+		t.Error("StartTs < now")
+	}
+	if gotStatus.StopTs < gotStatus.StartTs {
+		t.Error("StopTs < StartTs")
+	}
+	gotStatus.StartTs = 0
+	gotStatus.StopTs = 0
 	if diffs := deep.Equal(gotStatus, expectStatus); diffs != nil {
 		t.Error(diffs)
 	}
@@ -50,6 +60,8 @@ func TestCmdNonzeroExit(t *testing.T) {
 		Stdout:   []string{},
 		Stderr:   []string{},
 	}
+	gotStatus.StartTs = 0
+	gotStatus.StopTs = 0
 	if diffs := deep.Equal(gotStatus, expectStatus); diffs != nil {
 		t.Error(diffs)
 	}
@@ -89,6 +101,15 @@ func TestCmdStop(t *testing.T) {
 		t.Fatal("timeout waiting for statusChan")
 	}
 
+	start := time.Unix(0, gotStatus.StartTs)
+	stop := time.Unix(0, gotStatus.StopTs)
+	d := stop.Sub(start).Seconds()
+	if d < 0.90 || d > 2 {
+		t.Errorf("stop - start time not between 0.9s and 2.0s: %s - %s = %f", stop, start, d)
+	}
+	gotStatus.StartTs = 0
+	gotStatus.StopTs = 0
+
 	expectStatus := cmd.Status{
 		Cmd:      "./test/count-and-sleep",
 		PID:      gotStatus.PID,                    // nondeterministic
@@ -120,7 +141,6 @@ func TestCmdStop(t *testing.T) {
 	if diffs := deep.Equal(statusChan, c2); diffs != nil {
 		t.Error(diffs)
 	}
-
 }
 
 func TestCmdNotStarted(t *testing.T) {
@@ -214,6 +234,8 @@ func TestCmdOutput(t *testing.T) {
 func TestCmdNotFound(t *testing.T) {
 	p := cmd.NewCmd("cmd-does-not-exist")
 	gotStatus := <-p.Start()
+	gotStatus.StartTs = 0
+	gotStatus.StopTs = 0
 	expectStatus := cmd.Status{
 		Cmd:      "cmd-does-not-exist",
 		PID:      0,
@@ -260,6 +282,8 @@ func TestCmdLost(t *testing.T) {
 		t.Fatal("timeout waiting for statusChan")
 	}
 	gotStatus.Runtime = 0 // nondeterministic
+	gotStatus.StartTs = 0
+	gotStatus.StopTs = 0
 
 	expectStatus := cmd.Status{
 		Cmd:      "./test/count-and-sleep",
