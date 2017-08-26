@@ -9,8 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-cmd/cmd"
+
 	"github.com/go-test/deep"
+	"github.com/go-cmd/cmd"
 )
 
 func TestCmdOK(t *testing.T) {
@@ -87,7 +88,7 @@ func TestCmdStop(t *testing.T) {
 	time.Sleep(1 * time.Second)
 
 	// Kill the process
-	err := p.Stop()
+	err := p.Stop(500 * time.Millisecond)
 	if err != nil {
 		t.Error(err)
 	}
@@ -131,7 +132,7 @@ func TestCmdStop(t *testing.T) {
 	}
 
 	// Stop should be idempotent
-	err = p.Stop()
+	err = p.Stop(500 * time.Millisecond)
 	if err != nil {
 		t.Error(err)
 	}
@@ -162,7 +163,7 @@ func TestCmdNotStarted(t *testing.T) {
 		t.Error(diffs)
 	}
 
-	err := p.Stop()
+	err := p.Stop(500 * time.Millisecond)
 	if err != nil {
 		t.Error(err)
 	}
@@ -226,7 +227,7 @@ func TestCmdOutput(t *testing.T) {
 	}
 
 	// Kill the process
-	if err := p.Stop(); err != nil {
+	if err := p.Stop(500 * time.Millisecond); err != nil {
 		t.Error(err)
 	}
 }

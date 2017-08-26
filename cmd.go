@@ -103,7 +103,7 @@ func (c *Cmd) Start() <-chan Status {
 // Stop is idempotent. An error should only be returned in the rare case that
 // Stop is called immediately after the command ends but before Start can
 // update its internal state.
-func (c *Cmd) Stop() error {
+func (c *Cmd) Stop(waitTime time.Duration) error {
 	c.Lock()
 	defer c.Unlock()
 
@@ -120,7 +120,23 @@ func (c *Cmd) Stop() error {
 	// Signal the process group (-pid), not just the process, so that the process
 	// and all its children are signaled. Else, child procs can keep running and
 	// keep the stdout/stderr fd open and cause cmd.Wait to hang.
-	return syscall.Kill(-c.status.PID, syscall.SIGTERM)
+	stoppedChannel := make(chan error)
+	timeoutChannel := time.After(waitTime)
+	// the process might ignore sigterm, so we make a best effort request for the process
+	// to terminate. If it does not terminate in waitTime, we'll kill it
+	go func() {
+		err := syscall.Kill(-c.status.PID, syscall.SIGTERM)
+		stoppedChannel <- err
+	}()
+	for {
+		select {
+		case err := <- stoppedChannel:
+			return err
+		case <-timeoutChannel:
+			return syscall.Kill(-c.status.PID, syscall.SIGKILL)
+		}
+	}
+	return nil
 }
 
 // Status returns the Status of the command at any time. It is safe to call

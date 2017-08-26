@@ -1,5 +1,5 @@
 // Package deep provides function deep.Equal which is like reflect.DeepEqual but
-// retunrs a list of differences. This is helpful when comparing complex types
+// returns a list of differences. This is helpful when comparing complex types
 // like structures and maps.
 package deep
 
@@ -63,6 +63,17 @@ func Equal(a, b interface{}) []string {
 		buff:        []string{},
 		floatFormat: fmt.Sprintf("%%.%df", FloatPrecision),
 	}
+	if a == nil && b == nil {
+		return nil
+	} else if a == nil && b != nil {
+		c.saveDiff(b, "<nil pointer>")
+	} else if a != nil && b == nil {
+		c.saveDiff(a, "<nil pointer>")
+	}
+	if len(c.diff) > 0 {
+		return c.diff
+	}
+
 	c.equals(aVal, bVal, 0)
 	if len(c.diff) > 0 {
 		return c.diff // diffs
