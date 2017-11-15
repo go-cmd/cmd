@@ -55,7 +55,7 @@ func TestCmdNonzeroExit(t *testing.T) {
 		PID:      gotStatus.PID, // nondeterministic
 		Complete: true,
 		Exit:     1,
-		Error:    nil,
+		Error:    errors.New("exit status 1"),
 		Runtime:  gotStatus.Runtime, // nondeterministic
 		Stdout:   []string{},
 		Stderr:   []string{},

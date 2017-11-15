@@ -5,7 +5,6 @@ package cmd
 import (
 	"bufio"
 	"bytes"
-	"errors"
 	"os/exec"
 	"sync"
 	"syscall"
@@ -211,16 +210,11 @@ func (c *Cmd) run() {
 	signaled := false
 	if err != nil {
 		if exiterr, ok := err.(*exec.ExitError); ok {
-			err = nil // exec.ExitError isn't a standard error
-
 			if waitStatus, ok := exiterr.Sys().(syscall.WaitStatus); ok {
 				exitCode = waitStatus.ExitStatus() // -1 if signaled
 
-				// If the command was terminated by a signal, then exiterr.Error()
-				// is a string like "signal: terminated".
 				if waitStatus.Signaled() {
 					signaled = true
-					err = errors.New(exiterr.Error())
 				}
 			}
 		}
