@@ -15,19 +15,21 @@ import (
 // Cmd represents an external command, similar to the Go built-in os/exec.Cmd.
 // A Cmd cannot be reused after calling Start.
 type Cmd struct {
-	Name string
-	Args []string
-	// --
+	Name   string
+	Args   []string
+	Stdout chan string // streaming STDOUT if enabled, else nil (see Output)
+	Stderr chan string // streaming STDERR if enabled, else nil (see Output)
 	*sync.Mutex
 	started   bool      // cmd.Start called, no error
 	stopped   bool      // Stop called
 	done      bool      // run() done
 	final     bool      // status finalized in Status
 	startTime time.Time // if started true
-	stdout    *output
-	stderr    *output
+	stdout    *output   // low-level stdout buffering and streaming
+	stderr    *output   // low-level stderr buffering and streaming
 	status    Status
-	doneChan  chan Status
+	doneChan  chan Status // nil until Start() called
+	buffered  bool        // buffer STDOUT and STDERR to Status.Stdout and Std
 }
 
 // Status represents the status of a Cmd. It is valid during the entire lifecycle
@@ -42,24 +44,25 @@ type Cmd struct {
 type Status struct {
 	Cmd      string
 	PID      int
-	Complete bool    // false if stopped or signaled
-	Exit     int     // exit code of process
-	Error    error   // Go error
-	StartTs  int64   // Unix ts (nanoseconds)
-	StopTs   int64   // Unix ts (nanoseconds)
-	Runtime  float64 // seconds
-	Stdout   []string
-	Stderr   []string
+	Complete bool     // false if stopped or signaled
+	Exit     int      // exit code of process
+	Error    error    // Go error
+	StartTs  int64    // Unix ts (nanoseconds)
+	StopTs   int64    // Unix ts (nanoseconds)
+	Runtime  float64  // seconds
+	Stdout   []string // buffered STDOUT
+	Stderr   []string // buffered STDERR
 }
 
 // NewCmd creates a new Cmd for the given command name and arguments. The command
-// is not started until Start is called.
+// is not started until Start is called. Output buffering is on, streaming output
+// is off. To control output, see NewCmdOutput.
 func NewCmd(name string, args ...string) *Cmd {
 	return &Cmd{
-		Name: name,
-		Args: args,
-		// --
-		Mutex: &sync.Mutex{},
+		Name:     name,
+		Args:     args,
+		buffered: true,
+		Mutex:    &sync.Mutex{},
 		status: Status{
 			Cmd:      name,
 			PID:      0,
@@ -69,6 +72,29 @@ func NewCmd(name string, args ...string) *Cmd {
 			Runtime:  0,
 		},
 	}
+}
+
+// Output represents output control for NewCmdOutput. If Buffered is true,
+// STDOUT and STDERR are written to Status.Stdout and Status.Stderr. The caller
+// can call Cmd.Status to read output at intervals. If Streaming is true,
+// Cmd.Stdout and Cmd.Stderr channels are created and STDOUT and STDERR output
+// lines are written them in real time. This is faster and more efficient than
+// polling Cmd.Status. The caller must read both streaming channels, else output
+// lines are dropped silently.
+type Output struct {
+	Buffered  bool // STDOUT/STDERR to Status.Stdout/Status.Stderr
+	Streaming bool // STDOUT/STDERR to Cmd.Stdout/Cmd.Stderr
+}
+
+// NewCmdOutput creates a new Cmd with custom output control.
+func NewCmdOutput(output Output, name string, args ...string) *Cmd {
+	out := NewCmd(name, args...)
+	out.buffered = output.Buffered
+	if output.Streaming {
+		out.Stdout = make(chan string, 100)
+		out.Stderr = make(chan string, 100)
+	}
+	return out
 }
 
 // Start starts the command and immediately returns a channel that the caller
@@ -174,8 +200,8 @@ func (c *Cmd) run() {
 
 	// Write stdout and stderr to buffers that are safe to read while writing
 	// and don't cause a race condition.
-	c.stdout = newOutput()
-	c.stderr = newOutput()
+	c.stdout = newOutput(c.buffered, c.Stdout)
+	c.stderr = newOutput(c.buffered, c.Stderr)
 	cmd.Stdout = c.stdout
 	cmd.Stderr = c.stderr
 
@@ -250,24 +276,75 @@ func (c *Cmd) run() {
 // an io.Writer that's also safe for concurrent reads (as lines in a []string
 // no less), so I created one:
 type output struct {
-	buf   *bytes.Buffer
-	lines []string
+	buffered bool
+	buf      *bytes.Buffer
+	lines    []string
 	*sync.Mutex
+
+	streamChan chan string
+	streamBuf  []byte
+	n          int
+	nextLine   int
 }
 
-func newOutput() *output {
-	return &output{
-		buf:   &bytes.Buffer{},
-		lines: []string{},
-		Mutex: &sync.Mutex{},
+func newOutput(buffered bool, streamChan chan string) *output {
+	out := &output{
+		buffered:   buffered,
+		streamChan: streamChan,
 	}
+	if buffered {
+		out.buf = &bytes.Buffer{}
+		out.lines = []string{}
+		out.Mutex = &sync.Mutex{}
+	}
+	if streamChan != nil {
+		out.streamBuf = make([]byte, 16384)
+		out.n = 0
+		out.nextLine = 0
+	}
+	return out
 }
 
 // io.Writer interface is only this method
-func (rw *output) Write(p []byte) (int, error) {
-	rw.Lock()
-	defer rw.Unlock()
-	return rw.buf.Write(p) // and bytes.Buffer implements it, too
+func (rw *output) Write(p []byte) (n int, err error) {
+	if rw.buffered {
+		rw.Lock()
+		n, err = rw.buf.Write(p) // and bytes.Buffer implements it, too
+		rw.Unlock()
+	}
+
+	if rw.streamChan == nil { // not streaming
+		return // implicit
+	}
+
+	// Streaming
+	copy(rw.streamBuf[rw.n:], p)
+	rw.n += len(p)
+	for {
+		i := bytes.IndexByte(rw.streamBuf[rw.nextLine:], '\n')
+		if i < 0 {
+			break // no newline in stream, next line incomplete
+		}
+		eol := rw.nextLine + i // "line\n"
+		if rw.streamBuf[i-1] == '\r' {
+			eol -= 1 // "line\r\n"
+		}
+		select {
+		case rw.streamChan <- string(rw.streamBuf[rw.nextLine:eol]):
+		default:
+		}
+		rw.nextLine += i + 1
+		if rw.nextLine == rw.n {
+			rw.n = 0
+			rw.nextLine = 0
+			break // end of stream
+		}
+	}
+	if !rw.buffered {
+		n = len(p)
+	}
+
+	return // implicit
 }
 
 func (rw *output) Lines() []string {
