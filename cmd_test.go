@@ -329,7 +329,7 @@ func TestCmdBothOutput(t *testing.T) {
 	//   stdout 2
 	//   stderr 2
 	// Where each is printed on stdout and stderr as indicated.
-	p := cmd.NewCustomCmd(cmd.Options{Buffered: true, Streaming: true}, "./test/stream", tmpfile.Name())
+	p := cmd.NewCmdOptions(cmd.Options{Buffered: true, Streaming: true}, "./test/stream", tmpfile.Name())
 	p.Start()
 	time.Sleep(250 * time.Millisecond) // give test/stream a moment to print something
 
@@ -440,7 +440,7 @@ func TestCmdOnlyStreamingOutput(t *testing.T) {
 	//   stdout 2
 	//   stderr 2
 	// Where each is printed on stdout and stderr as indicated.
-	p := cmd.NewCustomCmd(cmd.Options{Buffered: false, Streaming: true}, "./test/stream", tmpfile.Name())
+	p := cmd.NewCmdOptions(cmd.Options{Buffered: false, Streaming: true}, "./test/stream", tmpfile.Name())
 	p.Start()
 	time.Sleep(250 * time.Millisecond) // give test/stream a moment to print something
 
@@ -538,7 +538,7 @@ func TestStreamingOverflow(t *testing.T) {
 
 	// Make new streaming output on our lines chan
 	lines := make(chan string, 5)
-	out := cmd.NewStreamingOutput(lines)
+	out := cmd.NewOutputStream(lines)
 
 	// Write the long line, it should only write (n) up to cmd.STREAM_BUFFER_SIZE
 	n, err := out.Write(longLine)
@@ -585,7 +585,7 @@ func TestStreamingOverflow(t *testing.T) {
 
 func TestStreamingMultipleLines(t *testing.T) {
 	lines := make(chan string, 5)
-	out := cmd.NewStreamingOutput(lines)
+	out := cmd.NewOutputStream(lines)
 
 	// Quick side test: Lines() chan string should be the same chan string
 	// we created the object with
@@ -630,7 +630,7 @@ func TestStreamingMultipleLines(t *testing.T) {
 
 func TestStreamingBlankLines(t *testing.T) {
 	lines := make(chan string, 5)
-	out := cmd.NewStreamingOutput(lines)
+	out := cmd.NewOutputStream(lines)
 
 	// Blank line in the middle
 	input := "foo\n\nbar\n"
@@ -707,7 +707,7 @@ LINES3:
 
 func TestStreamingCarriageReturn(t *testing.T) {
 	lines := make(chan string, 5)
-	out := cmd.NewStreamingOutput(lines)
+	out := cmd.NewOutputStream(lines)
 
 	input := "foo\r\nbar\r\n"
 	expectLines := []string{"foo", "bar"}
@@ -735,7 +735,7 @@ LINES1:
 
 func TestStreamingDropsLines(t *testing.T) {
 	lines := make(chan string, 3)
-	out := cmd.NewStreamingOutput(lines)
+	out := cmd.NewOutputStream(lines)
 
 	// Fill up the chan so Write blocks. We'll receive these instead of...
 	lines <- "1"
