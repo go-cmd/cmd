@@ -404,7 +404,7 @@ func TestCmdBothOutput(t *testing.T) {
 
 	s = p.Status()
 	if s.Exit != 0 {
-		t.Error("got exit %d, expected 0", s.Exit)
+		t.Errorf("got exit %d, expected 0", s.Exit)
 	}
 
 	// Kill the process
@@ -515,7 +515,7 @@ func TestCmdOnlyStreamingOutput(t *testing.T) {
 
 	s = p.Status()
 	if s.Exit != 0 {
-		t.Error("got exit %d, expected 0", s.Exit)
+		t.Errorf("got exit %d, expected 0", s.Exit)
 	}
 
 	// Kill the process
@@ -543,10 +543,10 @@ func TestStreamingOverflow(t *testing.T) {
 	// Write the long line, it should only write (n) up to cmd.STREAM_BUFFER_SIZE
 	n, err := out.Write(longLine)
 	if n != cmd.STREAM_BUFFER_SIZE {
-		t.Error("Write n = %d, expected %d", n, cmd.STREAM_BUFFER_SIZE)
+		t.Errorf("Write n = %d, expected %d", n, cmd.STREAM_BUFFER_SIZE)
 	}
 	if err != io.ErrShortWrite {
-		t.Errorf("got err '%v', expected io.ErrShortWrite")
+		t.Errorf("got err '%v', expected io.ErrShortWrite", err)
 	}
 
 	// Get first, truncated line
@@ -597,10 +597,10 @@ func TestStreamingMultipleLines(t *testing.T) {
 	input := "foo\nbar\n"
 	n, err := out.Write([]byte(input))
 	if n != len(input) {
-		t.Error("Write n = %d, expected %d", n, len(input))
+		t.Errorf("Write n = %d, expected %d", n, len(input))
 	}
 	if err != nil {
-		t.Errorf("got err '%v', expected nil")
+		t.Errorf("got err '%v', expected nil", err)
 	}
 
 	// Get one line
@@ -638,10 +638,10 @@ func TestStreamingBlankLines(t *testing.T) {
 	gotLines := []string{}
 	n, err := out.Write([]byte(input))
 	if n != len(input) {
-		t.Error("Write n = %d, expected %d", n, len(input))
+		t.Errorf("Write n = %d, expected %d", n, len(input))
 	}
 	if err != nil {
-		t.Errorf("got err '%v', expected nil")
+		t.Errorf("got err '%v', expected nil", err)
 	}
 LINES1:
 	for {
@@ -662,10 +662,10 @@ LINES1:
 	gotLines = []string{}
 	n, err = out.Write([]byte(input))
 	if n != len(input) {
-		t.Error("Write n = %d, expected %d", n, len(input))
+		t.Errorf("Write n = %d, expected %d", n, len(input))
 	}
 	if err != nil {
-		t.Errorf("got err '%v', expected nil")
+		t.Errorf("got err '%v', expected nil", err)
 	}
 LINES2:
 	for {
@@ -686,10 +686,10 @@ LINES2:
 	gotLines = []string{}
 	n, err = out.Write([]byte(input))
 	if n != len(input) {
-		t.Error("Write n = %d, expected %d", n, len(input))
+		t.Errorf("Write n = %d, expected %d", n, len(input))
 	}
 	if err != nil {
-		t.Errorf("got err '%v', expected nil")
+		t.Errorf("got err '%v', expected nil", err)
 	}
 LINES3:
 	for {
@@ -714,10 +714,10 @@ func TestStreamingCarriageReturn(t *testing.T) {
 	gotLines := []string{}
 	n, err := out.Write([]byte(input))
 	if n != len(input) {
-		t.Error("Write n = %d, expected %d", n, len(input))
+		t.Errorf("Write n = %d, expected %d", n, len(input))
 	}
 	if err != nil {
-		t.Errorf("got err '%v', expected nil")
+		t.Errorf("got err '%v', expected nil", err)
 	}
 LINES1:
 	for {
@@ -748,10 +748,10 @@ func TestStreamingDropsLines(t *testing.T) {
 	gotLines := []string{}
 	n, err := out.Write([]byte(input))
 	if n != len(input) {
-		t.Error("Write n = %d, expected %d", n, len(input))
+		t.Errorf("Write n = %d, expected %d", n, len(input))
 	}
 	if err != nil {
-		t.Errorf("got err '%v', expected nil")
+		t.Errorf("got err '%v', expected nil", err)
 	}
 LINES1:
 	for {
@@ -772,10 +772,10 @@ LINES1:
 	gotLines = []string{}
 	n, err = out.Write([]byte(input))
 	if n != len(input) {
-		t.Error("Write n = %d, expected %d", n, len(input))
+		t.Errorf("Write n = %d, expected %d", n, len(input))
 	}
 	if err != nil {
-		t.Errorf("got err '%v', expected nil")
+		t.Errorf("got err '%v', expected nil", err)
 	}
 LINES2:
 	for {
@@ -790,6 +790,47 @@ LINES2:
 		t.Error(diffs)
 	}
 
+	if diffs := deep.Equal(gotLines, expectLines); diffs != nil {
+		t.Error(diffs)
+	}
+}
+
+func TestStreamingOverflowBlocked(t *testing.T) {
+	// Make a line that will overflow the steaming buffer; see TestStreamingOverflow
+	longLine := make([]byte, cmd.STREAM_BUFFER_SIZE+3)
+	for i := 0; i < cmd.STREAM_BUFFER_SIZE; i++ {
+		longLine[i] = 'a'
+	}
+	longLine[cmd.STREAM_BUFFER_SIZE] = 'b'
+	longLine[cmd.STREAM_BUFFER_SIZE+1] = 'c'
+	longLine[cmd.STREAM_BUFFER_SIZE+2] = '\n'
+
+	// Fill up the chan so Write blocks
+	lines := make(chan string, 3)
+	out := cmd.NewOutputStream(lines)
+	lines <- "1"
+	lines <- "2"
+	lines <- "3"
+
+	expectLines := []string{"1", "2", "3"}
+	gotLines := []string{}
+	n, err := out.Write(longLine)
+	if n != cmd.STREAM_BUFFER_SIZE {
+		t.Errorf("Write n = %d, expected %d", n, cmd.STREAM_BUFFER_SIZE)
+	}
+	if err != io.ErrShortWrite {
+		t.Errorf("got err '%v', expected io.ErrShortWrite", err)
+	}
+
+LINES1:
+	for {
+		select {
+		case line := <-lines:
+			gotLines = append(gotLines, line)
+		default:
+			break LINES1
+		}
+	}
 	if diffs := deep.Equal(gotLines, expectLines); diffs != nil {
 		t.Error(diffs)
 	}
