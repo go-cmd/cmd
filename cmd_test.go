@@ -2,6 +2,7 @@ package cmd_test
 
 import (
 	"errors"
+	"io"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -297,6 +298,540 @@ func TestCmdLost(t *testing.T) {
 	}
 	if diffs := deep.Equal(gotStatus, expectStatus); diffs != nil {
 		t.Logf("%+v\n", gotStatus)
+		t.Error(diffs)
+	}
+}
+
+func TestCmdBothOutput(t *testing.T) {
+	tmpfile, err := ioutil.TempFile("", "cmd.TestStreamingOutput")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tmpfile.Name())
+	if err := tmpfile.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(tmpfile.Name()); err != nil {
+		t.Fatal(err)
+	}
+
+	touchFile := func(file string) {
+		if err := exec.Command("touch", file).Run(); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	// Streams a count to stdout and stderr until given file exists
+	// Output like:
+	//   stdout 1
+	//   stderr 1
+	//   stdout 2
+	//   stderr 2
+	// Where each is printed on stdout and stderr as indicated.
+	p := cmd.NewCmdOptions(cmd.Options{Buffered: true, Streaming: true}, "./test/stream", tmpfile.Name())
+	p.Start()
+	time.Sleep(250 * time.Millisecond) // give test/stream a moment to print something
+
+	timeout := time.After(10 * time.Second) // test timeout
+
+	// test/stream is spewing output, so we should be able to read it while
+	// the cmd is running. Try and fetch 3 lines from stdout and stderr.
+	i := 0
+	stdoutPrevLine := ""
+	stderrPrevLine := ""
+	readLines := 3
+	lines := 0
+	for i < readLines {
+		i++
+
+		// STDOUT
+		select {
+		case curLine := <-p.Stdout:
+			t.Logf("got line: '%s'", curLine)
+			if curLine == "" {
+				// Shouldn't happen because test/stream doesn't print empty lines.
+				// This indicates a bug in the stream buffer handling.
+				t.Fatal("got empty line")
+			}
+			if stdoutPrevLine != "" && curLine == stdoutPrevLine {
+				t.Fatal("current line == previous line, expected new output:\ncprev: %s\ncur: %s\n", stdoutPrevLine, curLine)
+			}
+			stdoutPrevLine = curLine
+			lines++
+		case <-timeout:
+			t.Fatal("timeout reading streaming output")
+		default:
+		}
+
+		// STDERR
+		select {
+		case curLine := <-p.Stderr:
+			t.Logf("got line: '%s'", curLine)
+			if curLine == "" {
+				// Shouldn't happen because test/stream doesn't print empty lines.
+				// This indicates a bug in the stream buffer handling.
+				t.Fatal("got empty line")
+			}
+			if stderrPrevLine != "" && curLine == stderrPrevLine {
+				t.Fatal("current line == previous line, expected new output:\ncprev: %s\ncur: %s\n", stderrPrevLine, curLine)
+			}
+			stderrPrevLine = curLine
+			lines++
+		case <-timeout:
+			t.Fatal("timeout reading streaming output")
+		default:
+		}
+
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	// readLines * 2 (stdout and stderr)
+	if lines != readLines*2 {
+		t.Fatalf("read %d lines from streaming output, expected 6", lines)
+	}
+
+	s := p.Status()
+	if len(s.Stdout) < readLines {
+		t.Fatalf("read %d lines from buffered STDOUT, expected %d", len(s.Stdout), readLines)
+	}
+	if len(s.Stderr) < readLines {
+		t.Fatalf("read %d lines from buffered STDERR, expected %d", len(s.Stderr), readLines)
+	}
+
+	// Stop test/stream
+	touchFile(tmpfile.Name())
+
+	s = p.Status()
+	if s.Exit != 0 {
+		t.Errorf("got exit %d, expected 0", s.Exit)
+	}
+
+	// Kill the process
+	if err := p.Stop(); err != nil {
+		t.Error(err)
+	}
+}
+
+func TestCmdOnlyStreamingOutput(t *testing.T) {
+	tmpfile, err := ioutil.TempFile("", "cmd.TestStreamingOutput")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tmpfile.Name())
+	if err := tmpfile.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(tmpfile.Name()); err != nil {
+		t.Fatal(err)
+	}
+
+	touchFile := func(file string) {
+		if err := exec.Command("touch", file).Run(); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	// Streams a count to stdout and stderr until given file exists
+	// Output like:
+	//   stdout 1
+	//   stderr 1
+	//   stdout 2
+	//   stderr 2
+	// Where each is printed on stdout and stderr as indicated.
+	p := cmd.NewCmdOptions(cmd.Options{Buffered: false, Streaming: true}, "./test/stream", tmpfile.Name())
+	p.Start()
+	time.Sleep(250 * time.Millisecond) // give test/stream a moment to print something
+
+	timeout := time.After(10 * time.Second) // test timeout
+
+	// test/stream is spewing output, so we should be able to read it while
+	// the cmd is running. Try and fetch 3 lines from stdout and stderr.
+	i := 0
+	stdoutPrevLine := ""
+	stderrPrevLine := ""
+	readLines := 3
+	lines := 0
+	for i < readLines {
+		i++
+
+		// STDOUT
+		select {
+		case curLine := <-p.Stdout:
+			t.Logf("got line: '%s'", curLine)
+			if curLine == "" {
+				// Shouldn't happen because test/stream doesn't print empty lines.
+				// This indicates a bug in the stream buffer handling.
+				t.Fatal("got empty line")
+			}
+			if stdoutPrevLine != "" && curLine == stdoutPrevLine {
+				t.Fatal("current line == previous line, expected new output:\ncprev: %s\ncur: %s\n", stdoutPrevLine, curLine)
+			}
+			stdoutPrevLine = curLine
+			lines++
+		case <-timeout:
+			t.Fatal("timeout reading streaming output")
+		default:
+		}
+
+		// STDERR
+		select {
+		case curLine := <-p.Stderr:
+			t.Logf("got line: '%s'", curLine)
+			if curLine == "" {
+				// Shouldn't happen because test/stream doesn't print empty lines.
+				// This indicates a bug in the stream buffer handling.
+				t.Fatal("got empty line")
+			}
+			if stderrPrevLine != "" && curLine == stderrPrevLine {
+				t.Fatal("current line == previous line, expected new output:\ncprev: %s\ncur: %s\n", stderrPrevLine, curLine)
+			}
+			stderrPrevLine = curLine
+			lines++
+		case <-timeout:
+			t.Fatal("timeout reading streaming output")
+		default:
+		}
+
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	// readLines * 2 (stdout and stderr)
+	if lines != readLines*2 {
+		t.Fatalf("read %d lines from streaming output, expected 6", lines)
+	}
+
+	s := p.Status()
+	if len(s.Stdout) != 0 {
+		t.Fatalf("read %d lines from buffered STDOUT, expected 0", len(s.Stdout))
+	}
+	if len(s.Stderr) != 0 {
+		t.Fatalf("read %d lines from buffered STDERR, expected 0", len(s.Stderr))
+	}
+
+	// Stop test/stream
+	touchFile(tmpfile.Name())
+
+	s = p.Status()
+	if s.Exit != 0 {
+		t.Errorf("got exit %d, expected 0", s.Exit)
+	}
+
+	// Kill the process
+	if err := p.Stop(); err != nil {
+		t.Error(err)
+	}
+}
+
+func TestStreamingOverflow(t *testing.T) {
+	// Make a line that will fill up and overflow the steaming buffer by 2 chars:
+	// "bc", plus newline. The line will be truncated at "bc\n" so we only get back
+	// the "aaa.." long string.
+	longLine := make([]byte, cmd.STREAM_BUFFER_SIZE+3) // "a...bc\n"
+	for i := 0; i < cmd.STREAM_BUFFER_SIZE; i++ {
+		longLine[i] = 'a'
+	}
+	longLine[cmd.STREAM_BUFFER_SIZE] = 'b'
+	longLine[cmd.STREAM_BUFFER_SIZE+1] = 'c'
+	longLine[cmd.STREAM_BUFFER_SIZE+2] = '\n'
+
+	// Make new streaming output on our lines chan
+	lines := make(chan string, 5)
+	out := cmd.NewOutputStream(lines)
+
+	// Write the long line, it should only write (n) up to cmd.STREAM_BUFFER_SIZE
+	n, err := out.Write(longLine)
+	if n != cmd.STREAM_BUFFER_SIZE {
+		t.Errorf("Write n = %d, expected %d", n, cmd.STREAM_BUFFER_SIZE)
+	}
+	if err != io.ErrShortWrite {
+		t.Errorf("got err '%v', expected io.ErrShortWrite", err)
+	}
+
+	// Get first, truncated line
+	var gotLine string
+	select {
+	case gotLine = <-lines:
+	default:
+		t.Fatal("blocked on <-lines")
+	}
+
+	// Up to but not include "bc\n" because it should have been truncated
+	if gotLine != string(longLine[0:cmd.STREAM_BUFFER_SIZE]) {
+		t.Logf("got line: '%s'", gotLine)
+		t.Error("did not get expected first line (see log above), expected only \"aaa...\" part")
+	}
+
+	// Streaming should still work as normal after an overflow; send it a line
+	n, err = out.Write([]byte("foo\n"))
+	if n != 4 {
+		t.Errorf("got n %d, expected 4", n)
+	}
+	if err != nil {
+		t.Errorf("got err '%v', expected nil", err)
+	}
+
+	select {
+	case gotLine = <-lines:
+	default:
+		t.Fatal("blocked on <-lines")
+	}
+
+	if gotLine != "foo" {
+		t.Errorf("got line: '%s', expected 'foo'", gotLine)
+	}
+}
+
+func TestStreamingMultipleLines(t *testing.T) {
+	lines := make(chan string, 5)
+	out := cmd.NewOutputStream(lines)
+
+	// Quick side test: Lines() chan string should be the same chan string
+	// we created the object with
+	if out.Lines() != lines {
+		t.Errorf("Lines() does not return the given string chan")
+	}
+
+	// Write two short lines
+	input := "foo\nbar\n"
+	n, err := out.Write([]byte(input))
+	if n != len(input) {
+		t.Errorf("Write n = %d, expected %d", n, len(input))
+	}
+	if err != nil {
+		t.Errorf("got err '%v', expected nil", err)
+	}
+
+	// Get one line
+	var gotLine string
+	select {
+	case gotLine = <-lines:
+	default:
+		t.Fatal("blocked on <-lines")
+	}
+
+	// "foo" should be sent before "bar" because that was the input
+	if gotLine != "foo" {
+		t.Errorf("got line: '%s', expected 'foo'", gotLine)
+	}
+
+	// Get next line
+	select {
+	case gotLine = <-lines:
+	default:
+		t.Fatal("blocked on <-lines")
+	}
+
+	if gotLine != "bar" {
+		t.Errorf("got line: '%s', expected 'bar'", gotLine)
+	}
+}
+
+func TestStreamingBlankLines(t *testing.T) {
+	lines := make(chan string, 5)
+	out := cmd.NewOutputStream(lines)
+
+	// Blank line in the middle
+	input := "foo\n\nbar\n"
+	expectLines := []string{"foo", "", "bar"}
+	gotLines := []string{}
+	n, err := out.Write([]byte(input))
+	if n != len(input) {
+		t.Errorf("Write n = %d, expected %d", n, len(input))
+	}
+	if err != nil {
+		t.Errorf("got err '%v', expected nil", err)
+	}
+LINES1:
+	for {
+		select {
+		case line := <-lines:
+			gotLines = append(gotLines, line)
+		default:
+			break LINES1
+		}
+	}
+	if diffs := deep.Equal(gotLines, expectLines); diffs != nil {
+		t.Error(diffs)
+	}
+
+	// All blank lines
+	input = "\n\n\n"
+	expectLines = []string{"", "", ""}
+	gotLines = []string{}
+	n, err = out.Write([]byte(input))
+	if n != len(input) {
+		t.Errorf("Write n = %d, expected %d", n, len(input))
+	}
+	if err != nil {
+		t.Errorf("got err '%v', expected nil", err)
+	}
+LINES2:
+	for {
+		select {
+		case line := <-lines:
+			gotLines = append(gotLines, line)
+		default:
+			break LINES2
+		}
+	}
+	if diffs := deep.Equal(gotLines, expectLines); diffs != nil {
+		t.Error(diffs)
+	}
+
+	// Blank lines at end
+	input = "foo\n\n\n"
+	expectLines = []string{"foo", "", ""}
+	gotLines = []string{}
+	n, err = out.Write([]byte(input))
+	if n != len(input) {
+		t.Errorf("Write n = %d, expected %d", n, len(input))
+	}
+	if err != nil {
+		t.Errorf("got err '%v', expected nil", err)
+	}
+LINES3:
+	for {
+		select {
+		case line := <-lines:
+			gotLines = append(gotLines, line)
+		default:
+			break LINES3
+		}
+	}
+	if diffs := deep.Equal(gotLines, expectLines); diffs != nil {
+		t.Error(diffs)
+	}
+}
+
+func TestStreamingCarriageReturn(t *testing.T) {
+	lines := make(chan string, 5)
+	out := cmd.NewOutputStream(lines)
+
+	input := "foo\r\nbar\r\n"
+	expectLines := []string{"foo", "bar"}
+	gotLines := []string{}
+	n, err := out.Write([]byte(input))
+	if n != len(input) {
+		t.Errorf("Write n = %d, expected %d", n, len(input))
+	}
+	if err != nil {
+		t.Errorf("got err '%v', expected nil", err)
+	}
+LINES1:
+	for {
+		select {
+		case line := <-lines:
+			gotLines = append(gotLines, line)
+		default:
+			break LINES1
+		}
+	}
+	if diffs := deep.Equal(gotLines, expectLines); diffs != nil {
+		t.Error(diffs)
+	}
+}
+
+func TestStreamingDropsLines(t *testing.T) {
+	lines := make(chan string, 3)
+	out := cmd.NewOutputStream(lines)
+
+	// Fill up the chan so Write blocks. We'll receive these instead of...
+	lines <- "1"
+	lines <- "2"
+	lines <- "3"
+
+	// ...new lines that we shouldn't receive because "123" is already in the chan.
+	input := "A\nB\nC\n"
+	expectLines := []string{"1", "2", "3"}
+	gotLines := []string{}
+	n, err := out.Write([]byte(input))
+	if n != len(input) {
+		t.Errorf("Write n = %d, expected %d", n, len(input))
+	}
+	if err != nil {
+		t.Errorf("got err '%v', expected nil", err)
+	}
+LINES1:
+	for {
+		select {
+		case line := <-lines:
+			gotLines = append(gotLines, line)
+		default:
+			break LINES1
+		}
+	}
+	if diffs := deep.Equal(gotLines, expectLines); diffs != nil {
+		t.Error(diffs)
+	}
+
+	// Now that chan is clear, we should receive only new lines.
+	input = "D\nE\nF\n"
+	expectLines = []string{"D", "E", "F"}
+	gotLines = []string{}
+	n, err = out.Write([]byte(input))
+	if n != len(input) {
+		t.Errorf("Write n = %d, expected %d", n, len(input))
+	}
+	if err != nil {
+		t.Errorf("got err '%v', expected nil", err)
+	}
+LINES2:
+	for {
+		select {
+		case line := <-lines:
+			gotLines = append(gotLines, line)
+		default:
+			break LINES2
+		}
+	}
+	if diffs := deep.Equal(gotLines, expectLines); diffs != nil {
+		t.Error(diffs)
+	}
+
+	if diffs := deep.Equal(gotLines, expectLines); diffs != nil {
+		t.Error(diffs)
+	}
+}
+
+func TestStreamingOverflowBlocked(t *testing.T) {
+	// Make a line that will overflow the steaming buffer; see TestStreamingOverflow
+	longLine := make([]byte, cmd.STREAM_BUFFER_SIZE+3)
+	for i := 0; i < cmd.STREAM_BUFFER_SIZE; i++ {
+		longLine[i] = 'a'
+	}
+	longLine[cmd.STREAM_BUFFER_SIZE] = 'b'
+	longLine[cmd.STREAM_BUFFER_SIZE+1] = 'c'
+	longLine[cmd.STREAM_BUFFER_SIZE+2] = '\n'
+
+	// Fill up the chan so Write blocks
+	lines := make(chan string, 3)
+	out := cmd.NewOutputStream(lines)
+	lines <- "1"
+	lines <- "2"
+	lines <- "3"
+
+	expectLines := []string{"1", "2", "3"}
+	gotLines := []string{}
+	n, err := out.Write(longLine)
+	if n != cmd.STREAM_BUFFER_SIZE {
+		t.Errorf("Write n = %d, expected %d", n, cmd.STREAM_BUFFER_SIZE)
+	}
+	if err != io.ErrShortWrite {
+		t.Errorf("got err '%v', expected io.ErrShortWrite", err)
+	}
+
+LINES1:
+	for {
+		select {
+		case line := <-lines:
+			gotLines = append(gotLines, line)
+		default:
+			break LINES1
+		}
+	}
+	if diffs := deep.Equal(gotLines, expectLines); diffs != nil {
 		t.Error(diffs)
 	}
 }
