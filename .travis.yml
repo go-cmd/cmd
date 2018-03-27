@@ -9,4 +9,4 @@ before_install:
   - go get golang.org/x/tools/cover
 
 script:
-  - $HOME/gopath/bin/goveralls -service=travis-ci
+  - $HOME/gopath/bin/goveralls -service=travis-ci -race -ignore main.go -show
