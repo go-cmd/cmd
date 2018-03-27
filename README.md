@@ -11,10 +11,12 @@ import "github.com/go-cmd/cmd"
 findCmd := cmd.NewCmd("find", "/", "--name" "needle")
 statusChan := findCmd.Start() // non-blocking
 
+ticker := time.NewTicker(2 * time.Second)
+
 // Print last line of stdout every 2s
 go func() {
-  for range time.Ticker(2 * time.Second).C {
-    status := findCmd.Status()
+  for range ticker.C {
+    status := c.Status()
     n := len(status.Stdout)
     fmt.Println(status.Stdout[n - 1])
   }
@@ -27,7 +29,7 @@ go func() {
 }()
 
 // Check if command is done
-switch {
+select {
 case finalStatus := <-statusChan:
   // done
 default:
