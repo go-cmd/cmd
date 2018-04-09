@@ -690,3 +690,25 @@ func TestError(t *testing.T) {
 		t.Errorf("got '%s', expected 'Error: *errors.errorString != <nil pointer>'", diff[0])
 	}
 }
+
+func TestNil(t *testing.T) {
+	type student struct {
+		name string
+		age  int
+	}
+
+	mark := student{"mark", 10}
+	var someNilThing interface{} = nil
+	diff := deep.Equal(someNilThing, mark)
+	if diff == nil {
+		t.Error("Nil value to comparision should not be equal")
+	}
+	diff = deep.Equal(mark, someNilThing)
+	if diff == nil {
+		t.Error("Nil value to comparision should not be equal")
+	}
+	diff = deep.Equal(someNilThing, someNilThing)
+	if diff != nil {
+		t.Error("Nil value to comparision should not be equal")
+	}
+}
