@@ -357,7 +357,7 @@ func TestCmdBothOutput(t *testing.T) {
 				t.Fatal("got empty line")
 			}
 			if stdoutPrevLine != "" && curLine == stdoutPrevLine {
-				t.Fatal("current line == previous line, expected new output:\ncprev: %s\ncur: %s\n", stdoutPrevLine, curLine)
+				t.Fatalf("current line == previous line, expected new output:\ncprev: %s\ncur: %s\n", stdoutPrevLine, curLine)
 			}
 			stdoutPrevLine = curLine
 			lines++
@@ -376,7 +376,7 @@ func TestCmdBothOutput(t *testing.T) {
 				t.Fatal("got empty line")
 			}
 			if stderrPrevLine != "" && curLine == stderrPrevLine {
-				t.Fatal("current line == previous line, expected new output:\ncprev: %s\ncur: %s\n", stderrPrevLine, curLine)
+				t.Fatalf("current line == previous line, expected new output:\ncprev: %s\ncur: %s\n", stderrPrevLine, curLine)
 			}
 			stderrPrevLine = curLine
 			lines++
@@ -468,7 +468,7 @@ func TestCmdOnlyStreamingOutput(t *testing.T) {
 				t.Fatal("got empty line")
 			}
 			if stdoutPrevLine != "" && curLine == stdoutPrevLine {
-				t.Fatal("current line == previous line, expected new output:\ncprev: %s\ncur: %s\n", stdoutPrevLine, curLine)
+				t.Fatalf("current line == previous line, expected new output:\ncprev: %s\ncur: %s\n", stdoutPrevLine, curLine)
 			}
 			stdoutPrevLine = curLine
 			lines++
@@ -487,7 +487,7 @@ func TestCmdOnlyStreamingOutput(t *testing.T) {
 				t.Fatal("got empty line")
 			}
 			if stderrPrevLine != "" && curLine == stderrPrevLine {
-				t.Fatal("current line == previous line, expected new output:\ncprev: %s\ncur: %s\n", stderrPrevLine, curLine)
+				t.Fatalf("current line == previous line, expected new output:\ncprev: %s\ncur: %s\n", stderrPrevLine, curLine)
 			}
 			stderrPrevLine = curLine
 			lines++
