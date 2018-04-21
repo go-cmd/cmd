@@ -6,5 +6,5 @@ count() {
 }
 while true; do
   [[ -f "$1" ]] && count && rm -f "$1"
-  sleep 0.5
+  sleep 0.2
 done

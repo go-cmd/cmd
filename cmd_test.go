@@ -178,6 +178,8 @@ func TestCmdOutput(t *testing.T) {
 	if err := tmpfile.Close(); err != nil {
 		t.Fatal(err)
 	}
+	t.Logf("temp file: %s", tmpfile.Name())
+	os.Remove(tmpfile.Name())
 
 	p := cmd.NewCmd("./test/touch-file-count", tmpfile.Name())
 
@@ -187,7 +189,7 @@ func TestCmdOutput(t *testing.T) {
 		if err := exec.Command("touch", file).Run(); err != nil {
 			t.Fatal(err)
 		}
-		time.Sleep(700 * time.Millisecond)
+		time.Sleep(600 * time.Millisecond)
 	}
 	var s cmd.Status
 	var stdout []string
