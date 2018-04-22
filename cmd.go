@@ -551,9 +551,9 @@ func (rw *OutputStream) Lines() <-chan string {
 	return rw.streamChan
 }
 
-// Set internal line buffer size. The default is DEFAULT_LINE_BUFFER_SIZE. This
-// function must be called immediately after NewOutputStream, and it is not safe
-// to call by multiple goroutines.
+// SetLineBufferSize sets the internal line buffer size. The default is DEFAULT_LINE_BUFFER_SIZE.
+// This function must be called immediately after NewOutputStream, and it is not
+// safe to call by multiple goroutines.
 //
 // Increasing the line buffer size can help reduce ErrLineBufferOverflow errors.
 func (rw *OutputStream) SetLineBufferSize(n int) {

@@ -731,7 +731,7 @@ func TestStreamingLineBuffering(t *testing.T) {
 
 func TestStreamingErrLineBufferOverflow1(t *testing.T) {
 	// Overflow the line buffer in 1 write. The first line "bc" is sent,
-	// but the remaing line can't be buffered because it's +2 bytes larger
+	// but the remaining line can't be buffered because it's +2 bytes larger
 	// than the line buffer.
 	longLine := make([]byte, 3+cmd.DEFAULT_LINE_BUFFER_SIZE+2) // "bc\nAAA...zz"
 	longLine[0] = 'b'
