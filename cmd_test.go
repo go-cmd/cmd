@@ -2,7 +2,6 @@ package cmd_test
 
 import (
 	"errors"
-	"io"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -457,6 +456,7 @@ func TestCmdOnlyStreamingOutput(t *testing.T) {
 	lines := 0
 	for i < readLines {
 		i++
+		t.Log(i)
 
 		// STDOUT
 		select {
@@ -523,65 +523,6 @@ func TestCmdOnlyStreamingOutput(t *testing.T) {
 	// Kill the process
 	if err := p.Stop(); err != nil {
 		t.Error(err)
-	}
-}
-
-func TestStreamingOverflow(t *testing.T) {
-	// Make a line that will fill up and overflow the steaming buffer by 2 chars:
-	// "bc", plus newline. The line will be truncated at "bc\n" so we only get back
-	// the "aaa.." long string.
-	longLine := make([]byte, cmd.STREAM_BUFFER_SIZE+3) // "a...bc\n"
-	for i := 0; i < cmd.STREAM_BUFFER_SIZE; i++ {
-		longLine[i] = 'a'
-	}
-	longLine[cmd.STREAM_BUFFER_SIZE] = 'b'
-	longLine[cmd.STREAM_BUFFER_SIZE+1] = 'c'
-	longLine[cmd.STREAM_BUFFER_SIZE+2] = '\n'
-
-	// Make new streaming output on our lines chan
-	lines := make(chan string, 5)
-	out := cmd.NewOutputStream(lines)
-
-	// Write the long line, it should only write (n) up to cmd.STREAM_BUFFER_SIZE
-	n, err := out.Write(longLine)
-	if n != cmd.STREAM_BUFFER_SIZE {
-		t.Errorf("Write n = %d, expected %d", n, cmd.STREAM_BUFFER_SIZE)
-	}
-	if err != io.ErrShortWrite {
-		t.Errorf("got err '%v', expected io.ErrShortWrite", err)
-	}
-
-	// Get first, truncated line
-	var gotLine string
-	select {
-	case gotLine = <-lines:
-	default:
-		t.Fatal("blocked on <-lines")
-	}
-
-	// Up to but not include "bc\n" because it should have been truncated
-	if gotLine != string(longLine[0:cmd.STREAM_BUFFER_SIZE]) {
-		t.Logf("got line: '%s'", gotLine)
-		t.Error("did not get expected first line (see log above), expected only \"aaa...\" part")
-	}
-
-	// Streaming should still work as normal after an overflow; send it a line
-	n, err = out.Write([]byte("foo\n"))
-	if n != 4 {
-		t.Errorf("got n %d, expected 4", n)
-	}
-	if err != nil {
-		t.Errorf("got err '%v', expected nil", err)
-	}
-
-	select {
-	case gotLine = <-lines:
-	default:
-		t.Fatal("blocked on <-lines")
-	}
-
-	if gotLine != "foo" {
-		t.Errorf("got line: '%s', expected 'foo'", gotLine)
 	}
 }
 
@@ -708,6 +649,7 @@ LINES3:
 }
 
 func TestStreamingCarriageReturn(t *testing.T) {
+	// Carriage return should be stripped
 	lines := make(chan string, 5)
 	out := cmd.NewOutputStream(lines)
 
@@ -735,105 +677,229 @@ LINES1:
 	}
 }
 
-func TestStreamingDropsLines(t *testing.T) {
-	lines := make(chan string, 3)
+func TestStreamingLineBuffering(t *testing.T) {
+	// Lines not terminated with newline are held in the line buffer until next
+	// write. When line is later terminated with newline, we prepend the buffered
+	// line and send the complete line.
+	lines := make(chan string, 1)
 	out := cmd.NewOutputStream(lines)
 
-	// Fill up the chan so Write blocks. We'll receive these instead of...
-	lines <- "1"
-	lines <- "2"
-	lines <- "3"
+	// Write 3 unterminated lines. Without a newline, they'll be buffered until...
+	for i := 0; i < 3; i++ {
+		input := "foo"
+		n, err := out.Write([]byte(input))
+		if err != nil {
+			t.Errorf("got err '%v', expected nil", err)
+		}
+		if n != len(input) {
+			t.Errorf("Write n = %d, expected %d", n, len(input))
+		}
 
-	// ...new lines that we shouldn't receive because "123" is already in the chan.
-	input := "A\nB\nC\n"
-	expectLines := []string{"1", "2", "3"}
-	gotLines := []string{}
+		// Should not get a line yet because it's not newline terminated
+		var gotLine string
+		select {
+		case gotLine = <-lines:
+			t.Errorf("got line '%s', expected no line yet", gotLine)
+		default:
+		}
+	}
+
+	// Write a line with newline that terminate the previous input
+	input := "bar\n"
 	n, err := out.Write([]byte(input))
-	if n != len(input) {
-		t.Errorf("Write n = %d, expected %d", n, len(input))
-	}
 	if err != nil {
 		t.Errorf("got err '%v', expected nil", err)
 	}
-LINES1:
-	for {
-		select {
-		case line := <-lines:
-			gotLines = append(gotLines, line)
-		default:
-			break LINES1
-		}
-	}
-	if diffs := deep.Equal(gotLines, expectLines); diffs != nil {
-		t.Error(diffs)
-	}
-
-	// Now that chan is clear, we should receive only new lines.
-	input = "D\nE\nF\n"
-	expectLines = []string{"D", "E", "F"}
-	gotLines = []string{}
-	n, err = out.Write([]byte(input))
 	if n != len(input) {
 		t.Errorf("Write n = %d, expected %d", n, len(input))
 	}
-	if err != nil {
-		t.Errorf("got err '%v', expected nil", err)
-	}
-LINES2:
-	for {
-		select {
-		case line := <-lines:
-			gotLines = append(gotLines, line)
-		default:
-			break LINES2
-		}
-	}
-	if diffs := deep.Equal(gotLines, expectLines); diffs != nil {
-		t.Error(diffs)
+
+	// Now we get the previously buffered part of the line "foofoofoo" plus
+	// the newline terminated part "bar"
+	var gotLine string
+	select {
+	case gotLine = <-lines:
+	default:
+		t.Fatal("blocked receiving line")
 	}
 
-	if diffs := deep.Equal(gotLines, expectLines); diffs != nil {
-		t.Error(diffs)
+	expectLine := "foofoofoobar"
+	if gotLine != expectLine {
+		t.Errorf("got line '%s', expected '%s'", gotLine, expectLine)
 	}
 }
 
-func TestStreamingOverflowBlocked(t *testing.T) {
-	// Make a line that will overflow the steaming buffer; see TestStreamingOverflow
-	longLine := make([]byte, cmd.STREAM_BUFFER_SIZE+3)
-	for i := 0; i < cmd.STREAM_BUFFER_SIZE; i++ {
-		longLine[i] = 'a'
+func TestStreamingErrLineBufferOverflow1(t *testing.T) {
+	// Overflow the line buffer in 1 write. The first line "bc" is sent,
+	// but the remaing line can't be buffered because it's +2 bytes larger
+	// than the line buffer.
+	longLine := make([]byte, 3+cmd.DEFAULT_LINE_BUFFER_SIZE+2) // "bc\nAAA...zz"
+	longLine[0] = 'b'
+	longLine[1] = 'c'
+	longLine[2] = '\n'
+	for i := 3; i < cmd.DEFAULT_LINE_BUFFER_SIZE; i++ {
+		longLine[i] = 'A'
 	}
-	longLine[cmd.STREAM_BUFFER_SIZE] = 'b'
-	longLine[cmd.STREAM_BUFFER_SIZE+1] = 'c'
-	longLine[cmd.STREAM_BUFFER_SIZE+2] = '\n'
+	// These 2 chars cause ErrLineBufferOverflow:
+	longLine[cmd.DEFAULT_LINE_BUFFER_SIZE] = 'z'
+	longLine[cmd.DEFAULT_LINE_BUFFER_SIZE+1] = 'z'
 
-	// Fill up the chan so Write blocks
-	lines := make(chan string, 3)
+	lines := make(chan string, 5)
 	out := cmd.NewOutputStream(lines)
-	lines <- "1"
-	lines <- "2"
-	lines <- "3"
 
-	expectLines := []string{"1", "2", "3"}
-	gotLines := []string{}
+	// Write the long line, it should only write (n) 3 bytes for "bc\n"
 	n, err := out.Write(longLine)
-	if n != cmd.STREAM_BUFFER_SIZE {
-		t.Errorf("Write n = %d, expected %d", n, cmd.STREAM_BUFFER_SIZE)
+	if n != 3 { // "bc\n"
+		t.Errorf("Write n = %d, expected 3", n)
 	}
-	if err != io.ErrShortWrite {
-		t.Errorf("got err '%v', expected io.ErrShortWrite", err)
+	switch err.(type) {
+	case cmd.ErrLineBufferOverflow:
+		lbo := err.(cmd.ErrLineBufferOverflow)
+		if lbo.BufferSize != cmd.DEFAULT_LINE_BUFFER_SIZE {
+			t.Errorf("ErrLineBufferOverflow.BufferSize = %d, expected %d", lbo.BufferSize, cmd.DEFAULT_LINE_BUFFER_SIZE)
+		}
+		if lbo.BufferFree != cmd.DEFAULT_LINE_BUFFER_SIZE {
+			t.Errorf("ErrLineBufferOverflow.BufferFree = %d, expected %d", lbo.BufferFree, cmd.DEFAULT_LINE_BUFFER_SIZE)
+		}
+		if lbo.Line != string(longLine[3:]) {
+			t.Errorf("ErrLineBufferOverflow.Line = '%s', expected '%s'", lbo.Line, string(longLine[3:]))
+		}
+		if lbo.Error() == "" {
+			t.Errorf("ErrLineBufferOverflow.Error() string is empty, expected something")
+		}
+	default:
+		t.Errorf("got err '%v', expected cmd.ErrLineBufferOverflow", err)
 	}
 
-LINES1:
-	for {
-		select {
-		case line := <-lines:
-			gotLines = append(gotLines, line)
-		default:
-			break LINES1
-		}
+	// "bc" should be sent before the overflow error
+	var gotLine string
+	select {
+	case gotLine = <-lines:
+	default:
+		t.Fatal("blocked on <-lines")
 	}
-	if diffs := deep.Equal(gotLines, expectLines); diffs != nil {
-		t.Error(diffs)
+	if gotLine != "bc" {
+		t.Errorf("got line '%s', expected 'bc'", gotLine)
+	}
+
+	// Streaming should still work after an overflow. However, Go is going to
+	// stop any time Write() returns an error.
+	n, err = out.Write([]byte("foo\n"))
+	if n != 4 {
+		t.Errorf("got n %d, expected 4", n)
+	}
+	if err != nil {
+		t.Errorf("got err '%v', expected nil", err)
+	}
+
+	select {
+	case gotLine = <-lines:
+	default:
+		t.Fatal("blocked on <-lines")
+	}
+	if gotLine != "foo" {
+		t.Errorf("got line: '%s', expected 'foo'", gotLine)
+	}
+}
+
+func TestStreamingErrLineBufferOverflow2(t *testing.T) {
+	// Overflow line buffer on 2nd write. So first write puts something in the
+	// buffer, and then 2nd overflows it instead of completing the line.
+	lines := make(chan string, 1)
+	out := cmd.NewOutputStream(lines)
+
+	// Get "bar" into the buffer by omitting its newline
+	input := "foo\nbar"
+	n, err := out.Write([]byte(input))
+	if err != nil {
+		t.Errorf("got err '%v', expected nil", err)
+	}
+	if n != len(input) {
+		t.Errorf("Write n = %d, expected %d", n, len(input))
+	}
+
+	// Only "foo" sent, not "bar" yet
+	var gotLine string
+	select {
+	case gotLine = <-lines:
+	default:
+		t.Fatal("blocked on <-lines")
+	}
+	if gotLine != "foo" {
+		t.Errorf("got line '%s', expected 'foo'", gotLine)
+	}
+
+	// Buffer contains "bar", now wverflow it on 2nd write
+	longLine := make([]byte, cmd.DEFAULT_LINE_BUFFER_SIZE)
+	for i := 0; i < cmd.DEFAULT_LINE_BUFFER_SIZE; i++ {
+		longLine[i] = 'X'
+	}
+	n, err = out.Write(longLine)
+	if n != 0 {
+		t.Errorf("Write n = %d, expected 0", n)
+	}
+	switch err.(type) {
+	case cmd.ErrLineBufferOverflow:
+		lbo := err.(cmd.ErrLineBufferOverflow)
+		// Buffer has "bar" so it's free is total - 3
+		if lbo.BufferFree != cmd.DEFAULT_LINE_BUFFER_SIZE-3 {
+			t.Errorf("ErrLineBufferOverflow.BufferFree = %d, expected %d", lbo.BufferFree, cmd.DEFAULT_LINE_BUFFER_SIZE)
+		}
+		// Up to but not include "bc\n" because it should have been truncated
+		expectLine := "bar" + string(longLine)
+		if lbo.Line != expectLine {
+			t.Errorf("ErrLineBufferOverflow.Line = '%s', expected '%s'", lbo.Line, expectLine)
+		}
+	default:
+		t.Errorf("got err '%v', expected cmd.ErrLineBufferOverflow", err)
+	}
+}
+
+func TestStreamingSetLineBufferSize(t *testing.T) {
+	// Same overflow as TestStreamingErrLineBufferOverflow1 but before we use
+	// stream output, we'll increase buffer size by calling SetLineBufferSize
+	// which should prevent the overflow
+	longLine := make([]byte, 3+cmd.DEFAULT_LINE_BUFFER_SIZE+2) // "bc\nAAA...z\n"
+	longLine[0] = 'b'
+	longLine[1] = 'c'
+	longLine[2] = '\n'
+	for i := 3; i < cmd.DEFAULT_LINE_BUFFER_SIZE; i++ {
+		longLine[i] = 'A'
+	}
+	longLine[cmd.DEFAULT_LINE_BUFFER_SIZE] = 'z'
+	longLine[cmd.DEFAULT_LINE_BUFFER_SIZE+1] = '\n'
+
+	lines := make(chan string, 5)
+	out := cmd.NewOutputStream(lines)
+	out.SetLineBufferSize(cmd.DEFAULT_LINE_BUFFER_SIZE * 2)
+
+	n, err := out.Write(longLine)
+	if err != nil {
+		t.Errorf("error '%v', expected nil", err)
+	}
+	if n != len(longLine) {
+		t.Errorf("Write n = %d, expected %d", n, len(longLine))
+	}
+
+	// First we get "bc"
+	var gotLine string
+	select {
+	case gotLine = <-lines:
+	default:
+		t.Fatal("blocked on <-lines")
+	}
+	if gotLine != "bc" {
+		t.Errorf("got line '%s', expected 'bc'", gotLine)
+	}
+
+	// Then we get the long line because the buffer was large enough to hold it
+	select {
+	case gotLine = <-lines:
+	default:
+		t.Fatal("blocked on <-lines")
+	}
+	expectLine := string(longLine[3 : cmd.DEFAULT_LINE_BUFFER_SIZE+1]) // not newline
+	if gotLine != expectLine {
+		t.Errorf("got line: '%s', expected '%s'", gotLine, expectLine)
 	}
 }

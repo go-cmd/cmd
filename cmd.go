@@ -1,7 +1,7 @@
-// Package cmd runs external commands with concurrent access to output and status.
-// It wraps the Go standard library os/exec.Command to correctly handle reading
-// output (STDOUT and STDERR) while a command is running and killing a command.
-// All operations are safe to call from multiple goroutines.
+// Package cmd runs external commands with concurrent access to output and
+// status. It wraps the Go standard library os/exec.Command to correctly handle
+// reading output (STDOUT and STDERR) while a command is running and killing a
+// command. All operations are safe to call from multiple goroutines.
 //
 // A simple example that runs env and prints its output:
 //
@@ -44,6 +44,7 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"os/exec"
 	"sync"
@@ -133,8 +134,8 @@ func NewCmdOptions(options Options, name string, args ...string) *Cmd {
 	out := NewCmd(name, args...)
 	out.buffered = options.Buffered
 	if options.Streaming {
-		out.Stdout = make(chan string, STREAM_CHAN_SIZE)
-		out.Stderr = make(chan string, STREAM_CHAN_SIZE)
+		out.Stdout = make(chan string, DEFAULT_STREAM_CHAN_SIZE)
+		out.Stderr = make(chan string, DEFAULT_STREAM_CHAN_SIZE)
 	}
 	return out
 }
@@ -395,17 +396,42 @@ func (rw *OutputBuffer) Lines() []string {
 
 // --------------------------------------------------------------------------
 
+const (
+	// DEFAULT_LINE_BUFFER_SIZE is the default size of the OutputStream line buffer.
+	// The default value is usually sufficient, but if ErrLineBufferOverflow errors
+	// occur, try increasing the size by calling OutputBuffer.SetLineBufferSize.
+	DEFAULT_LINE_BUFFER_SIZE = 16384
+
+	// DEFAULT_STREAM_CHAN_SIZE is the default string channel size for a Cmd when
+	// Options.Streaming is true. The string channel size can have a minor
+	// performance impact if too small by causing OutputStream.Write to block
+	// excessively.
+	DEFAULT_STREAM_CHAN_SIZE = 1000
+)
+
+// ErrLineBufferOverflow is returned by OutputStream.Write when the internal
+// line buffer is filled before a newline character is written to terminate a
+// line. Increasing the line buffer size by calling OutputStream.SetLineBufferSize
+// can help prevent this error.
+type ErrLineBufferOverflow struct {
+	Line       string // Unterminated line that caused the error
+	BufferSize int    // Internal line buffer size
+	BufferFree int    // Free bytes in line buffer
+}
+
+func (e ErrLineBufferOverflow) Error() string {
+	return fmt.Sprintf("line does not contain newline and is %d bytes too long to buffer (buffer size: %d)",
+		len(e.Line)-e.BufferSize, e.BufferSize)
+}
+
 // OutputStream represents real time, line by line output from a running Cmd.
 // Lines are terminated by a single newline preceded by an optional carriage
 // return. Both newline and carriage return are stripped from the line when
-// sent to a caller-provided channel. The caller should begin receiving before
-// starting the Cmd. If the channel blocks, lines are dropped. Lines are
-// discarded after being sent. The channel is not closed by the OutputStream.
+// sent to a caller-provided channel.
 //
-// If output is large or written very fast, this is a better solution than
-// OutputBuffer because the internal stream buffer is bounded at STREAM_BUFFER_SIZE
-// bytes. For multiple goroutines to read from the same channel, the caller must
-// implement its own multiplexing solution.
+// The caller must begin receiving before starting the Cmd. Write blocks on the
+// channel; the caller must always read the channel. The channel is not closed
+// by the OutputStream.
 //
 // A Cmd in this package uses an OutputStream for both STDOUT and STDERR when
 // created by calling NewCmdOptions and Options.Streaming is true. To use
@@ -416,44 +442,44 @@ func (rw *OutputBuffer) Lines() []string {
 //
 //   stdoutChan := make(chan string, 100)
 //   go func() {
-//     for line := range stdoutChan {
-//       // Do something with the line
-//     }
+//       for line := range stdoutChan {
+//           // Do something with the line
+//       }
 //   }()
 //
 //   runnableCmd := exec.Command(...)
 //   stdout := cmd.NewOutputStream(stdoutChan)
 //   runnableCmd.Stdout = stdout
 //
-// While runnableCmd is running, lines are sent to the channels as soon as they
-// are written by the command. The channel is not closed by the OutputStream.
+//
+// While runnableCmd is running, lines are sent to the channel as soon as they
+// are written and newline-terminated by the command. After the command finishes,
+// the caller should wait for the last lines to be sent:
+//
+//   for len(stdoutChan) > 0 {
+//       time.Sleep(10 * time.Millisecond)
+//   }
+//
+// Since the channel is not closed by the OutputStream, the two indications that
+// all lines have been sent and received are the command finishing and the
+// channel size being zero.
 type OutputStream struct {
 	streamChan chan string
-	streamBuf  []byte
-	n          int
-	nextLine   int
+	bufSize    int
+	buf        []byte
+	lastChar   int
 }
 
-const (
-	// STREAM_BUFFER_SIZE is the size of the OutputStream internal buffer.
-	// Lines are truncated at this length. For example, if a line is three
-	// times this length, only the first third is sent.
-	STREAM_BUFFER_SIZE = 8192
-
-	// STREAM_CHAN_SIZE is the default string channel size for a Cmd when
-	// Options.Streaming is true.
-	STREAM_CHAN_SIZE = 100
-)
-
 // NewOutputStream creates a new streaming output on the given channel. The
-// caller should begin receiving on the channel before the command is started.
+// caller must begin receiving on the channel before the command is started.
 // The OutputStream never closes the channel.
 func NewOutputStream(streamChan chan string) *OutputStream {
 	out := &OutputStream{
 		streamChan: streamChan,
-		streamBuf:  make([]byte, STREAM_BUFFER_SIZE),
-		n:          0,
-		nextLine:   0,
+		// --
+		bufSize:  DEFAULT_LINE_BUFFER_SIZE,
+		buf:      make([]byte, DEFAULT_LINE_BUFFER_SIZE),
+		lastChar: 0,
 	}
 	return out
 }
@@ -461,75 +487,59 @@ func NewOutputStream(streamChan chan string) *OutputStream {
 // Write makes OutputStream implement the io.Writer interface. Do not call
 // this function directly.
 func (rw *OutputStream) Write(p []byte) (n int, err error) {
-	// Determine how much of p we can save in our buffer
-	total := len(p)
-	free := len(rw.streamBuf[rw.n:])
-	if rw.n+total <= free {
-		// all of p
-		copy(rw.streamBuf[rw.n:], p)
-		rw.n += total
-		n = total // on implicit return
-	} else {
-		// part of p
-		copy(rw.streamBuf[rw.n:], p[0:free])
-		rw.n += free
-		n = free // on implicit return
-	}
+	n = len(p) // end of buffer
+	firstChar := 0
 
-	// Send each line in streamBuf
 LINES:
 	for {
 		// Find next newline in stream buffer. nextLine starts at 0, but buff
-		// can containe multiple lines, like "foo\nbar". So in that case nextLine
+		// can contain multiple lines, like "foo\nbar". So in that case nextLine
 		// will be 0 ("foo\nbar\n") then 4 ("bar\n") on next iteration. And i
 		// will be 3 and 7, respectively. So lines are [0:3] are [4:7].
-		i := bytes.IndexByte(rw.streamBuf[rw.nextLine:], '\n')
-		if i < 0 {
+		newlineOffset := bytes.IndexByte(p[firstChar:], '\n')
+		if newlineOffset < 0 {
 			break LINES // no newline in stream, next line incomplete
 		}
 
 		// End of line offset is start (nextLine) + newline offset. Like bufio.Scanner,
 		// we allow \r\n but strip the \r too by decrementing the offset for that byte.
-		eol := rw.nextLine + i // "line\n"
-		if i > 0 && rw.streamBuf[i-1] == '\r' {
-			eol -= 1 // "line\r\n"
+		lastChar := firstChar + newlineOffset // "line\n"
+		if newlineOffset > 0 && p[newlineOffset-1] == '\r' {
+			lastChar -= 1 // "line\r\n"
 		}
 
-		// Send the string
-		select {
-		case rw.streamChan <- string(rw.streamBuf[rw.nextLine:eol]):
-		default:
-			// Channel blocked, caller isn't listening? Silently drop the string.
+		// Send the line, prepend line buffer if set
+		var line string
+		if rw.lastChar > 0 {
+			line = string(rw.buf[0:rw.lastChar])
+			rw.lastChar = 0 // reset buffer
 		}
+		line += string(p[firstChar:lastChar])
+		rw.streamChan <- line // blocks if chan full
 
 		// Next line offset is the first byte (+1) after the newline (i)
-		rw.nextLine += i + 1
-
-		// If next line offset is the end of the buffer (rw.n), then we've processed
-		// all lines. Reset everything back to offset 0.
-		if rw.nextLine == rw.n {
-			rw.n = 0
-			rw.nextLine = 0
-			break LINES
-		}
-
-		// Next line offset is < end of buffer (rw.n), so keep processing lines
+		firstChar += newlineOffset + 1
 	}
 
-	// nextLine is reset to zero when a string is complete (has a newline),
-	// so if > 0 _and_ n is at max capacity, then buffer is full and there's
-	// an incomplete string. We don't support double-buffering, so send the
-	// partial string and reset. Note: if nextLine > 0 but n < buff size,
-	// then it's an incomplete string but we have buffer space to wait for
-	// the rest of it.
-	if rw.n == STREAM_BUFFER_SIZE {
-		select {
-		case rw.streamChan <- string(rw.streamBuf[rw.nextLine:rw.n]):
-		default:
+	if firstChar < n {
+		remain := len(p[firstChar:])
+		bufFree := len(rw.buf[rw.lastChar:])
+		if remain > bufFree {
+			var line string
+			if rw.lastChar > 0 {
+				line = string(rw.buf[0:rw.lastChar])
+			}
+			line += string(p[firstChar:])
+			err = ErrLineBufferOverflow{
+				Line:       line,
+				BufferSize: rw.bufSize,
+				BufferFree: bufFree,
+			}
+			n = firstChar
+			return // implicit
 		}
-		rw.n = 0
-		rw.nextLine = 0
-		err = io.ErrShortWrite // on implicit return
+		copy(rw.buf[rw.lastChar:], p[firstChar:])
+		rw.lastChar += remain
 	}
 
 	return // implicit
@@ -539,4 +549,14 @@ LINES:
 // passed to NewOutputStream.
 func (rw *OutputStream) Lines() <-chan string {
 	return rw.streamChan
+}
+
+// Set internal line buffer size. The default is DEFAULT_LINE_BUFFER_SIZE. This
+// function must be called immediately after NewOutputStream, and it is not safe
+// to call by multiple goroutines.
+//
+// Increasing the line buffer size can help reduce ErrLineBufferOverflow errors.
+func (rw *OutputStream) SetLineBufferSize(n int) {
+	rw.bufSize = n
+	rw.buf = make([]byte, rw.bufSize)
 }
