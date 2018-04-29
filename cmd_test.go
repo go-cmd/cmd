@@ -903,3 +903,51 @@ func TestStreamingSetLineBufferSize(t *testing.T) {
 		t.Errorf("got line: '%s', expected '%s'", gotLine, expectLine)
 	}
 }
+
+func TestRunning(t *testing.T) {
+	// Count to 3 sleeping 1s between counts
+	p := cmd.NewCmd("./test/count-and-sleep", "3", "1")
+	statusChan := p.Start()
+
+	// For 2s while cmd is running, Running() chan should block, which means
+	// it's still running
+	runningTimer := time.After(2 * time.Second)
+TIMER:
+	for {
+		select {
+		case <-runningTimer:
+			break TIMER
+		default:
+		}
+		select {
+		case <-p.Running():
+			t.Fatal("Running chan is closed before runningTime finished")
+		default:
+			// Running chan blocked, cmd is still running
+		}
+		time.Sleep(400 * time.Millisecond)
+	}
+
+	// Wait for cmd to complete
+	var s1 cmd.Status
+	select {
+	case s1 = <-statusChan:
+		t.Logf("got status: %+v", s1)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for cmd to complete")
+	}
+
+	// After cmd completes, Running chan should be closed and not block
+	select {
+	case <-p.Running():
+	default:
+		t.Fatal("Running chan did not block after cmd completed")
+	}
+
+	// After command completes, we should be able to get exact same
+	// Status that's returned on the Start() chan
+	s2 := p.Status()
+	if diff := deep.Equal(s1, s2); diff != nil {
+		t.Error(diff)
+	}
+}

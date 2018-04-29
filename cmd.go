@@ -61,16 +61,17 @@ type Cmd struct {
 	Stdout chan string // streaming STDOUT if enabled, else nil (see Options)
 	Stderr chan string // streaming STDERR if enabled, else nil (see Options)
 	*sync.Mutex
-	started   bool          // cmd.Start called, no error
-	stopped   bool          // Stop called
-	done      bool          // run() done
-	final     bool          // status finalized in Status
-	startTime time.Time     // if started true
-	stdout    *OutputBuffer // low-level stdout buffering and streaming
-	stderr    *OutputBuffer // low-level stderr buffering and streaming
-	status    Status
-	doneChan  chan Status // nil until Start() called
-	buffered  bool        // buffer STDOUT and STDERR to Status.Stdout and Std
+	started     bool          // cmd.Start called, no error
+	stopped     bool          // Stop called
+	done        bool          // run() done
+	final       bool          // status finalized in Status
+	startTime   time.Time     // if started true
+	stdout      *OutputBuffer // low-level stdout buffering and streaming
+	stderr      *OutputBuffer // low-level stderr buffering and streaming
+	status      Status
+	doneChan    chan Status   // nil until Start() called
+	runningChan chan struct{} // closed when done running
+	buffered    bool          // buffer STDOUT and STDERR to Status.Stdout and Std
 }
 
 // Status represents the status of a Cmd. It is valid during the entire lifecycle
@@ -112,6 +113,7 @@ func NewCmd(name string, args ...string) *Cmd {
 			Error:    nil,
 			Runtime:  0,
 		},
+		runningChan: make(chan struct{}),
 	}
 }
 
@@ -226,11 +228,19 @@ func (c *Cmd) Status() Status {
 	return c.status
 }
 
+// Running returns a channel that blocks until the command stops running, then
+// the channel is closed. Receivers can call Status after the command stops to
+// obtain the final status.
+func (c *Cmd) Running() <-chan struct{} {
+	return c.runningChan
+}
+
 // --------------------------------------------------------------------------
 
 func (c *Cmd) run() {
 	defer func() {
 		c.doneChan <- c.Status() // unblocks Start if caller is waiting
+		close(c.runningChan)
 	}()
 
 	// //////////////////////////////////////////////////////////////////////
@@ -289,6 +299,7 @@ func (c *Cmd) run() {
 	// Wait for command to finish or be killed
 	// //////////////////////////////////////////////////////////////////////
 	err := cmd.Wait()
+	now = time.Now()
 
 	// Get exit code of the command
 	exitCode := 0
@@ -315,8 +326,8 @@ func (c *Cmd) run() {
 	if !c.stopped && !signaled {
 		c.status.Complete = true
 	}
-	c.status.Runtime = time.Now().Sub(c.startTime).Seconds()
-	c.status.StopTs = time.Now().UnixNano()
+	c.status.Runtime = now.Sub(c.startTime).Seconds()
+	c.status.StopTs = now.UnixNano()
 	c.status.Exit = exitCode
 	c.status.Error = err
 	c.done = true

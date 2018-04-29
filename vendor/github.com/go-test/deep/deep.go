@@ -1,5 +1,5 @@
 // Package deep provides function deep.Equal which is like reflect.DeepEqual but
-// retunrs a list of differences. This is helpful when comparing complex types
+// returns a list of differences. This is helpful when comparing complex types
 // like structures and maps.
 package deep
 
@@ -63,6 +63,17 @@ func Equal(a, b interface{}) []string {
 		buff:        []string{},
 		floatFormat: fmt.Sprintf("%%.%df", FloatPrecision),
 	}
+	if a == nil && b == nil {
+		return nil
+	} else if a == nil && b != nil {
+		c.saveDiff(b, "<nil pointer>")
+	} else if a != nil && b == nil {
+		c.saveDiff(a, "<nil pointer>")
+	}
+	if len(c.diff) > 0 {
+		return c.diff
+	}
+
 	c.equals(aVal, bVal, 0)
 	if len(c.diff) > 0 {
 		return c.diff // diffs
@@ -73,6 +84,16 @@ func Equal(a, b interface{}) []string {
 func (c *cmp) equals(a, b reflect.Value, level int) {
 	if level > MaxDepth {
 		logError(ErrMaxRecursion)
+		return
+	}
+
+	// Check if one value is nil, e.g. T{x: *X} and T.x is nil
+	if !a.IsValid() || !b.IsValid() {
+		if a.IsValid() && !b.IsValid() {
+			c.saveDiff(a.Type(), "<nil pointer>")
+		} else if !a.IsValid() && b.IsValid() {
+			c.saveDiff("<nil pointer>", b.Type())
+		}
 		return
 	}
 
@@ -104,27 +125,18 @@ func (c *cmp) equals(a, b reflect.Value, level int) {
 	}
 
 	// Dereference pointers and interface{}
-	if aKind == reflect.Ptr || aKind == reflect.Interface {
-		a = a.Elem()
-		aKind = a.Kind()
-		if a.IsValid() {
-			aType = a.Type()
-		}
-	}
-	if bKind == reflect.Ptr || bKind == reflect.Interface {
-		b = b.Elem()
-		if b.IsValid() {
-			bType = b.Type()
-		}
-	}
+	if aElem, bElem := (aKind == reflect.Ptr || aKind == reflect.Interface),
+		(bKind == reflect.Ptr || bKind == reflect.Interface); aElem || bElem {
 
-	// Check if one value is nil, e.g. T{x: *X} and T.x is nil
-	if !a.IsValid() || !b.IsValid() {
-		if a.IsValid() && !b.IsValid() {
-			c.saveDiff(aType, "<nil pointer>")
-		} else if !a.IsValid() && b.IsValid() {
-			c.saveDiff("<nil pointer>", bType)
+		if aElem {
+			a = a.Elem()
 		}
+
+		if bElem {
+			b = b.Elem()
+		}
+
+		c.equals(a, b, level+1)
 		return
 	}
 
@@ -235,6 +247,16 @@ func (c *cmp) equals(a, b reflect.Value, level int) {
 				return
 			}
 		}
+	case reflect.Array:
+		n := a.Len()
+		for i := 0; i < n; i++ {
+			c.push(fmt.Sprintf("array[%d]", i))
+			c.equals(a.Index(i), b.Index(i), level+1)
+			c.pop()
+			if len(c.diff) >= MaxDiff {
+				break
+			}
+		}
 	case reflect.Slice:
 		if a.IsNil() || b.IsNil() {
 			if a.IsNil() && !b.IsNil() {
@@ -321,10 +343,6 @@ func (c *cmp) saveDiff(aval, bval interface{}) {
 	} else {
 		c.diff = append(c.diff, fmt.Sprintf("%v != %v", aval, bval))
 	}
-}
-
-func init() {
-	log.SetFlags(log.Lshortfile)
 }
 
 func logError(err error) {
