@@ -61,17 +61,17 @@ type Cmd struct {
 	Stdout chan string // streaming STDOUT if enabled, else nil (see Options)
 	Stderr chan string // streaming STDERR if enabled, else nil (see Options)
 	*sync.Mutex
-	started     bool          // cmd.Start called, no error
-	stopped     bool          // Stop called
-	done        bool          // run() done
-	final       bool          // status finalized in Status
-	startTime   time.Time     // if started true
-	stdout      *OutputBuffer // low-level stdout buffering and streaming
-	stderr      *OutputBuffer // low-level stderr buffering and streaming
-	status      Status
-	doneChan    chan Status   // nil until Start() called
-	runningChan chan struct{} // closed when done running
-	buffered    bool          // buffer STDOUT and STDERR to Status.Stdout and Std
+	started    bool          // cmd.Start called, no error
+	stopped    bool          // Stop called
+	done       bool          // run() done
+	final      bool          // status finalized in Status
+	startTime  time.Time     // if started true
+	stdout     *OutputBuffer // low-level stdout buffering and streaming
+	stderr     *OutputBuffer // low-level stderr buffering and streaming
+	status     Status
+	statusChan chan Status   // nil until Start() called
+	doneChan   chan struct{} // closed when done running
+	buffered   bool          // buffer STDOUT and STDERR to Status.Stdout and Std
 }
 
 // Status represents the status of a Cmd. It is valid during the entire lifecycle
@@ -113,7 +113,7 @@ func NewCmd(name string, args ...string) *Cmd {
 			Error:    nil,
 			Runtime:  0,
 		},
-		runningChan: make(chan struct{}),
+		doneChan: make(chan struct{}),
 	}
 }
 
@@ -161,13 +161,13 @@ func (c *Cmd) Start() <-chan Status {
 	c.Lock()
 	defer c.Unlock()
 
-	if c.doneChan != nil {
-		return c.doneChan
+	if c.statusChan != nil {
+		return c.statusChan
 	}
 
-	c.doneChan = make(chan Status, 1)
+	c.statusChan = make(chan Status, 1)
 	go c.run()
-	return c.doneChan
+	return c.statusChan
 }
 
 // Stop stops the command by sending its process group a SIGTERM signal.
@@ -180,7 +180,7 @@ func (c *Cmd) Stop() error {
 
 	// Nothing to stop if Start hasn't been called, or the proc hasn't started,
 	// or it's already done.
-	if c.doneChan == nil || !c.started || c.done {
+	if c.statusChan == nil || !c.started || c.done {
 		return nil
 	}
 
@@ -201,7 +201,7 @@ func (c *Cmd) Status() Status {
 	defer c.Unlock()
 
 	// Return default status if cmd hasn't been started
-	if c.doneChan == nil || !c.started {
+	if c.statusChan == nil || !c.started {
 		return c.status
 	}
 
@@ -228,19 +228,18 @@ func (c *Cmd) Status() Status {
 	return c.status
 }
 
-// Running returns a channel that blocks until the command stops running, then
-// the channel is closed. Receivers can call Status after the command stops to
-// obtain the final status.
-func (c *Cmd) Running() <-chan struct{} {
-	return c.runningChan
+// Done returns a channel that's closed when the command stops running.
+// Call Status after the command stops to get its final status.
+func (c *Cmd) Done() <-chan struct{} {
+	return c.doneChan
 }
 
 // --------------------------------------------------------------------------
 
 func (c *Cmd) run() {
 	defer func() {
-		c.doneChan <- c.Status() // unblocks Start if caller is waiting
-		close(c.runningChan)
+		c.statusChan <- c.Status() // unblocks Start if caller is waiting
+		close(c.doneChan)
 	}()
 
 	// //////////////////////////////////////////////////////////////////////
