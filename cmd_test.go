@@ -951,3 +951,38 @@ TIMER:
 		t.Error(diff)
 	}
 }
+
+func TestCmdEnvOK(t *testing.T) {
+	now := time.Now().Unix()
+
+	p := cmd.NewCmd("env")
+	p.Env = []string{"FOO=foo"}
+	gotStatus := <-p.Start()
+	expectStatus := cmd.Status{
+		Cmd:      "env",
+		PID:      gotStatus.PID, // nondeterministic
+		Complete: true,
+		Exit:     0,
+		Error:    nil,
+		Runtime:  gotStatus.Runtime, // nondeterministic
+		Stdout:   []string{"FOO=foo"},
+		Stderr:   []string{},
+	}
+	if gotStatus.StartTs < now {
+		t.Error("StartTs < now")
+	}
+	if gotStatus.StopTs < gotStatus.StartTs {
+		t.Error("StopTs < StartTs")
+	}
+	gotStatus.StartTs = 0
+	gotStatus.StopTs = 0
+	if diffs := deep.Equal(gotStatus, expectStatus); diffs != nil {
+		t.Error(diffs)
+	}
+	if gotStatus.PID < 0 {
+		t.Errorf("got PID %d, expected non-zero", gotStatus.PID)
+	}
+	if gotStatus.Runtime < 0 {
+		t.Errorf("got runtime %f, expected non-zero", gotStatus.Runtime)
+	}
+}
