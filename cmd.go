@@ -3,7 +3,7 @@
 // reading output (STDOUT and STDERR) while a command is running and killing a
 // command. All operations are safe to call from multiple goroutines.
 //
-// A simple example that runs env and prints its output:
+// A basic example that runs env and prints its output:
 //
 //   import (
 //       "fmt"
@@ -33,11 +33,12 @@
 //   // Do other work while Cmd is running...
 //   status <- statusChan // blocking
 //
-// Start returns a channel, so the first example is blocking because it receives
-// on the channel, but the second example is non-blocking because it saves the
-// channel and receives on it later. The Status function can be called while the
-// Cmd is running. When the Cmd finishes, a final status is sent to the channel
-// returned by Start.
+// Start returns a channel to which the final Status is sent when the command
+// finishes for any reason. The first example blocks receiving on the channel.
+// The second example is non-blocking because it saves the channel and receives
+// on it later. Only one final status is sent to the channel; use Done for
+// multiple goroutines to wait for the command to finish, then call Status to
+// get the final status.
 package cmd
 
 import (
@@ -53,8 +54,9 @@ import (
 )
 
 // Cmd represents an external command, similar to the Go built-in os/exec.Cmd.
-// A Cmd cannot be reused after calling Start. Do not modify exported fields;
-// they are read-only. To create a new Cmd, call NewCmd or NewCmdOptions.
+// A Cmd cannot be reused after calling Start. Exported fields are read-only and
+// should not be modified, except Env which can be set before calling Start.
+// To create a new Cmd, call NewCmd or NewCmdOptions.
 type Cmd struct {
 	Name   string
 	Args   []string
@@ -75,26 +77,32 @@ type Cmd struct {
 	buffered   bool          // buffer STDOUT and STDERR to Status.Stdout and Std
 }
 
-// Status represents the status of a Cmd. It is valid during the entire lifecycle
-// of the command. If StartTs > 0 (or PID > 0), the command has started. If
-// StopTs > 0, the command has stopped. After the command has stopped, Exit = 0
-// is usually enough to indicate success, but complete success is indicated by:
+// Status represents the running status and consolidated return of a Cmd. It can
+// be obtained any time by calling Cmd.Status. If StartTs > 0, the command has
+// started. If StopTs > 0, the command has stopped. After the command finishes
+// for any reason, this combination of values indicates success (presuming the
+// command only exits zero on success):
+//
 //   Exit     = 0
 //   Error    = nil
 //   Complete = true
-// If Complete is false, the command was stopped or timed out. Error is a Go
-// error related to starting or running the command.
+//
+// Error is a Go error from the underlying os/exec.Cmd.Start or os/exec.Cmd.Wait.
+// If not nil, the command either failed to start (it never ran) or it started
+// but was terminated unexpectedly (probably signaled). In either case, the
+// command failed. Callers should check Error first. If nil, then check Exit and
+// Complete.
 type Status struct {
 	Cmd      string
 	PID      int
 	Complete bool     // false if stopped or signaled
 	Exit     int      // exit code of process
 	Error    error    // Go error
-	StartTs  int64    // Unix ts (nanoseconds)
-	StopTs   int64    // Unix ts (nanoseconds)
-	Runtime  float64  // seconds
-	Stdout   []string // buffered STDOUT
-	Stderr   []string // buffered STDERR
+	StartTs  int64    // Unix ts (nanoseconds), zero if Cmd not started
+	StopTs   int64    // Unix ts (nanoseconds), zero if Cmd not started or running
+	Runtime  float64  // seconds, zero if Cmd not started
+	Stdout   []string // buffered STDOUT; see Cmd.Status for more info
+	Stderr   []string // buffered STDERR; see Cmd.Status for more info
 }
 
 // NewCmd creates a new Cmd for the given command name and arguments. The command
@@ -122,6 +130,7 @@ func NewCmd(name string, args ...string) *Cmd {
 type Options struct {
 	// If Buffered is true, STDOUT and STDERR are written to Status.Stdout and
 	// Status.Stderr. The caller can call Cmd.Status to read output at intervals.
+	// See Cmd.Status for more info.
 	Buffered bool
 
 	// If Streaming is true, Cmd.Stdout and Cmd.Stderr channels are created and
@@ -156,8 +165,8 @@ func NewCmdOptions(options Options, name string, args ...string) *Cmd {
 //   status := <-statusChan // blocking
 //
 // Exactly one Status is sent on the channel when the command ends. The channel
-// is not closed. Any error is set to Status.Error. Start is idempotent; it always
-// returns the same channel.
+// is not closed. Any Go error is set to Status.Error. Start is idempotent; it
+// always returns the same channel.
 func (c *Cmd) Start() <-chan Status {
 	c.Lock()
 	defer c.Unlock()
@@ -197,6 +206,21 @@ func (c *Cmd) Stop() error {
 
 // Status returns the Status of the command at any time. It is safe to call
 // concurrently by multiple goroutines.
+//
+// With buffered output, Status.Stdout and Status.Stderr contain the full output
+// as of the Status call time. For example, if the command counts to 3 and three
+// calls are made between counts, Status.Stdout contains:
+//
+//   "1"
+//   "1 2"
+//   "1 2 3"
+//
+// The caller is responsible for tailing the buffered output if needed. Else,
+// consider using streaming output. When the command finishes, buffered output
+// is complete and final.
+//
+// Status.Runtime is updated while the command is running and final when it
+// finishes.
 func (c *Cmd) Status() Status {
 	c.Lock()
 	defer c.Unlock()
@@ -230,7 +254,8 @@ func (c *Cmd) Status() Status {
 }
 
 // Done returns a channel that's closed when the command stops running.
-// Call Status after the command stops to get its final status.
+// This method is useful for multiple goroutines to wait for the command
+// to finish.Call Status after the command finishes to get its final status.
 func (c *Cmd) Done() <-chan struct{} {
 	return c.doneChan
 }
@@ -249,7 +274,7 @@ func (c *Cmd) run() {
 	cmd := exec.Command(c.Name, c.Args...)
 
 	// Set process group ID so the cmd and all its children become a new
-	// process grouc. This allows Stop to SIGTERM thei cmd's process group
+	// process group. This allows Stop to SIGTERM the cmd's process group
 	// without killing this process (i.e. this code here).
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
@@ -305,23 +330,33 @@ func (c *Cmd) run() {
 	err := cmd.Wait()
 	now = time.Now()
 
-	// Get exit code of the command
+	// Get exit code of the command. According to the manual, Wait() returns:
+	// "If the command fails to run or doesn't complete successfully, the error
+	// is of type *ExitError. Other error types may be returned for I/O problems."
 	exitCode := 0
 	signaled := false
 	if err != nil {
-		if exiterr, ok := err.(*exec.ExitError); ok {
-			err = nil // exec.ExitError isn't a standard error
-
+		switch err.(type) {
+		case *exec.ExitError:
+			// This is the normal case which is not really an error. It's string
+			// representation is only "*exec.ExitError". It only means the cmd
+			// did not exit zero and caller should see ExitError.Stderr, which
+			// we already have. So first we'll have this as the real/underlying
+			// type, then discard err so status.Error doesn't contain a useless
+			// "*exec.ExitError". With the real type we can get the non-zero
+			// exit code and determine if the process was signaled, which yields
+			// a more specific error message, so we set err again in that case.
+			exiterr := err.(*exec.ExitError)
+			err = nil
 			if waitStatus, ok := exiterr.Sys().(syscall.WaitStatus); ok {
 				exitCode = waitStatus.ExitStatus() // -1 if signaled
-
-				// If the command was terminated by a signal, then exiterr.Error()
-				// is a string like "signal: terminated".
 				if waitStatus.Signaled() {
 					signaled = true
-					err = errors.New(exiterr.Error())
+					err = errors.New(exiterr.Error()) // "signal: terminated"
 				}
 			}
+		default:
+			// I/O problem according to the manual ^. Don't change err.
 		}
 	}
 
