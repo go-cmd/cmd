@@ -64,17 +64,18 @@ type Cmd struct {
 	Stdout chan string // streaming STDOUT if enabled, else nil (see Options)
 	Stderr chan string // streaming STDERR if enabled, else nil (see Options)
 	*sync.Mutex
-	started    bool          // cmd.Start called, no error
-	stopped    bool          // Stop called
-	done       bool          // run() done
-	final      bool          // status finalized in Status
-	startTime  time.Time     // if started true
-	stdout     *OutputBuffer // low-level stdout buffering and streaming
-	stderr     *OutputBuffer // low-level stderr buffering and streaming
-	status     Status
-	statusChan chan Status   // nil until Start() called
-	doneChan   chan struct{} // closed when done running
-	buffered   bool          // buffer STDOUT and STDERR to Status.Stdout and Std
+	started              bool          // cmd.Start called, no error
+	stopped              bool          // Stop called
+	done                 bool          // run() done
+	final                bool          // status finalized in Status
+	startTime            time.Time     // if started true
+	stdout               *OutputBuffer // low-level stdout buffering and streaming
+	stderr               *OutputBuffer // low-level stderr buffering and streaming
+	status               Status
+	statusChan           chan Status   // nil until Start() called
+	doneChan             chan struct{} // closed when done running
+	buffered             bool          // buffer STDOUT and STDERR to Status.Stdout and Std
+	killChildOnTerminate bool          // tell the kernel to kill children processes on parent (this program) terminates (e.g. crashes)
 }
 
 // Status represents the running status and consolidated return of a Cmd. It can
@@ -138,6 +139,10 @@ type Options struct {
 	// faster and more efficient than polling Cmd.Status. The caller must read both
 	// streaming channels, else lines are dropped silently.
 	Streaming bool
+
+	// If KillChilOnTerminate is true, the kernel will kill the child
+	// process spawned if the parent one (your program) is terminated or crashed.
+	KillChildOnTerminate bool
 }
 
 // NewCmdOptions creates a new Cmd with options. The command is not started
@@ -149,6 +154,7 @@ func NewCmdOptions(options Options, name string, args ...string) *Cmd {
 		out.Stdout = make(chan string, DEFAULT_STREAM_CHAN_SIZE)
 		out.Stderr = make(chan string, DEFAULT_STREAM_CHAN_SIZE)
 	}
+	out.killChildOnTerminate = options.KillChildOnTerminate
 	return out
 }
 
@@ -277,6 +283,12 @@ func (c *Cmd) run() {
 	// process group. This allows Stop to SIGTERM the cmd's process group
 	// without killing this process (i.e. this code here).
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+	// If options specify to kill the child on parent's process terminate,
+	// put the additional value to the cmd.SysProcAttr defined above
+	if c.killChildOnTerminate {
+		cmd.SysProcAttr.Pdeathsig = syscall.SIGKILL
+	}
 
 	// Write stdout and stderr to buffers that are safe to read while writing
 	// and don't cause a race condition.
