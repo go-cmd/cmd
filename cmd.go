@@ -61,6 +61,7 @@ type Cmd struct {
 	Name   string
 	Args   []string
 	Env    []string
+	Dir    string
 	Stdout chan string // streaming STDOUT if enabled, else nil (see Options)
 	Stderr chan string // streaming STDERR if enabled, else nil (see Options)
 	*sync.Mutex
@@ -301,6 +302,10 @@ func (c *Cmd) run() {
 	// Set the runtime environment for the command as per os/exec.Cmd.  If Env
 	// is nil, use the current process' environment.
 	cmd.Env = c.Env
+	// Dir specifies the working directory of the command.
+	// If Dir is the empty string, this runs the command in the
+	// calling process's current directory.
+	cmd.Dir = c.Dir
 
 	// //////////////////////////////////////////////////////////////////////
 	// Start command
