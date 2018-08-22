@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-cmd/cmd"
+	"github.com/ShinyTrinkets/go-cmd"
 	"github.com/go-test/deep"
 )
 
