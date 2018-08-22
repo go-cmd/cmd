@@ -153,6 +153,22 @@ func NewCmdOptions(options Options, name string, args ...string) *Cmd {
 	return out
 }
 
+// SetDir sets the environment variables for the launched command.
+// This can only have effect before starting the command.
+func (c *Cmd) SetDir(dir string) {
+	c.Lock()
+	defer c.Unlock()
+	c.Dir = dir
+}
+
+// SetEnv sets the working directory of the command.
+// This can only have effect before starting the command.
+func (c *Cmd) SetEnv(env []string) {
+	c.Lock()
+	defer c.Unlock()
+	c.Env = env
+}
+
 // Start starts the command and immediately returns a channel that the caller
 // can use to receive the final Status of the command when it ends. The caller
 // can start the command and wait like,
