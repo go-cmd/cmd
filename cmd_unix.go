@@ -1,3 +1,5 @@
+// +build linux darwin
+
 // Package cmd runs external commands with concurrent access to output and
 // status. It wraps the Go standard library os/exec.Command to correctly handle
 // reading output (STDOUT and STDERR) while a command is running and killing a
@@ -39,6 +41,7 @@
 // on it later. Only one final status is sent to the channel; use Done for
 // multiple goroutines to wait for the command to finish, then call Status to
 // get the final status.
+
 package cmd
 
 import (
