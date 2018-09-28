@@ -47,6 +47,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"sync"
 	"syscall"
@@ -201,7 +202,12 @@ func (c *Cmd) Stop() error {
 	// Signal the process group (-pid), not just the process, so that the process
 	// and all its children are signaled. Else, child procs can keep running and
 	// keep the stdout/stderr fd open and cause cmd.Wait to hang.
-	return syscall.Kill(-c.status.PID, syscall.SIGTERM)
+	p, err := os.FindProcess(-c.status.PID)
+	if err != nil {
+		return err
+	}
+
+	return p.Signal(syscall.SIGTERM)
 }
 
 // Status returns the Status of the command at any time. It is safe to call
