@@ -1,3 +1,5 @@
+// +build windows
+
 // Package cmd runs external commands with concurrent access to output and
 // status. It wraps the Go standard library os/exec.Command to correctly handle
 // reading output (STDOUT and STDERR) while a command is running and killing a

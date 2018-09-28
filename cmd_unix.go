@@ -1,4 +1,4 @@
-// +build linux darwin
+// +build !windows
 
 // Package cmd runs external commands with concurrent access to output and
 // status. It wraps the Go standard library os/exec.Command to correctly handle
