@@ -986,3 +986,23 @@ func TestCmdEnvOK(t *testing.T) {
 		t.Errorf("got runtime %f, expected non-zero", gotStatus.Runtime)
 	}
 }
+
+func TestCmdNoOutput(t *testing.T) {
+	// Set both output options to false to discard all output
+	p := cmd.NewCmdOptions(
+		cmd.Options{
+			Buffered:  false,
+			Streaming: false,
+		},
+		"echo", "hell-world")
+	s := <-p.Start()
+	if s.Exit != 0 {
+		t.Errorf("got exit %d, expected 0", s.Exit)
+	}
+	if len(s.Stdout) != 0 {
+		t.Errorf("got stdout, expected no output: %v", s.Stdout)
+	}
+	if len(s.Stderr) != 0 {
+		t.Errorf("got stderr, expected no output: %v", s.Stderr)
+	}
+}
