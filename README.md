@@ -8,7 +8,7 @@ This package is a small but very useful wrapper around [os/exec.Cmd](https://gol
 import "github.com/go-cmd/cmd"
 
 // Start a long-running process, capture stdout and stderr
-findCmd := cmd.NewCmd("find", "/", "--name" "needle")
+findCmd := cmd.NewCmd("find", "/", "--name", "needle")
 statusChan := findCmd.Start() // non-blocking
 
 ticker := time.NewTicker(2 * time.Second)
