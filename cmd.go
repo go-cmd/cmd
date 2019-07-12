@@ -546,7 +546,6 @@ func (rw *OutputStream) Write(p []byte) (n int, err error) {
 	n = len(p) // end of buffer
 	firstChar := 0
 
-LINES:
 	for {
 		// Find next newline in stream buffer. nextLine starts at 0, but buff
 		// can contain multiple lines, like "foo\nbar". So in that case nextLine
@@ -554,7 +553,7 @@ LINES:
 		// will be 3 and 7, respectively. So lines are [0:3] are [4:7].
 		newlineOffset := bytes.IndexByte(p[firstChar:], '\n')
 		if newlineOffset < 0 {
-			break LINES // no newline in stream, next line incomplete
+			break // no newline in stream, next line incomplete
 		}
 
 		// End of line offset is start (nextLine) + newline offset. Like bufio.Scanner,
