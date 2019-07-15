@@ -8,39 +8,45 @@
 This package is a small but very useful wrapper around [os/exec.Cmd](https://golang.org/pkg/os/exec/#Cmd) for Linux and macOS that makes it safe and simple to run external commands in highly concurrent, asynchronous, real-time applications. Here's the look and feel:
 
 ```go
-import "github.com/go-cmd/cmd"
+import (
+	"fmt"
+	"time"
+	"github.com/go-cmd/cmd"
+)
 
-// Start a long-running process, capture stdout and stderr
-findCmd := cmd.NewCmd("find", "/", "--name", "needle")
-statusChan := findCmd.Start() // non-blocking
+func main() {
+	// Start a long-running process, capture stdout and stderr
+	findCmd := cmd.NewCmd("find", "/", "--name", "needle")
+	statusChan := findCmd.Start() // non-blocking
 
-ticker := time.NewTicker(2 * time.Second)
+	ticker := time.NewTicker(2 * time.Second)
 
-// Print last line of stdout every 2s
-go func() {
-  for range ticker.C {
-    status := findCmd.Status()
-    n := len(status.Stdout)
-    fmt.Println(status.Stdout[n - 1])
-  }
-}()
+	// Print last line of stdout every 2s
+	go func() {
+		for range ticker.C {
+			status := findCmd.Status()
+			n := len(status.Stdout)
+			fmt.Println(status.Stdout[n-1])
+		}
+	}()
 
-// Stop command after 1 hour
-go func() {
-  <-time.After(1 * time.Hour)
-  findCmd.Stop()
-}()
+	// Stop command after 1 hour
+	go func() {
+		<-time.After(1 * time.Hour)
+		findCmd.Stop()
+	}()
 
-// Check if command is done
-select {
-case finalStatus := <-statusChan:
-  // done
-default:
-  // no, still running
+	// Check if command is done
+	select {
+	case finalStatus := <-statusChan:
+		// done
+	default:
+		// no, still running
+	}
+
+	// Block waiting for command to exit, be stopped, or be killed
+	finalStatus := <-statusChan
 }
-
-// Block waiting for command to exit, be stopped, or be killed
-finalStatus := <-statusChan
 ```
 
 That's it, only three methods: `Start`, `Stop`, and `Status`. When possible, it's better to use `go-cmd/Cmd` than `os/exec.Cmd` because `go-cmd/Cmd` provides:
