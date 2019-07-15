@@ -19,7 +19,7 @@ ticker := time.NewTicker(2 * time.Second)
 // Print last line of stdout every 2s
 go func() {
   for range ticker.C {
-    status := c.Status()
+    status := findCmd.Status()
     n := len(status.Stdout)
     fmt.Println(status.Stdout[n - 1])
   }
