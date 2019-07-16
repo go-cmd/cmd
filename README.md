@@ -1,43 +1,52 @@
 # go-cmd/Cmd
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/go-cmd/cmd)](https://goreportcard.com/report/github.com/go-cmd/cmd) [![Build Status](https://travis-ci.org/go-cmd/cmd.svg?branch=master)](https://travis-ci.org/go-cmd/cmd) [![Coverage Status](https://coveralls.io/repos/github/go-cmd/cmd/badge.svg?branch=master)](https://coveralls.io/github/go-cmd/cmd?branch=master) [![GoDoc](https://godoc.org/github.com/go-cmd/cmd?status.svg)](https://godoc.org/github.com/go-cmd/cmd)
+[![Go Report Card][goreport-img]][goreport-url]
+[![Build status][build-img]][build-url]
+[![Coverage report][cover-img]][cover-url]
+[![GoDoc][godoc-img]][godoc-url]
 
 This package is a small but very useful wrapper around [os/exec.Cmd](https://golang.org/pkg/os/exec/#Cmd) for Linux and macOS that makes it safe and simple to run external commands in highly concurrent, asynchronous, real-time applications. Here's the look and feel:
 
 ```go
-import "github.com/go-cmd/cmd"
+import (
+	"fmt"
+	"time"
+	"github.com/go-cmd/cmd"
+)
 
-// Start a long-running process, capture stdout and stderr
-findCmd := cmd.NewCmd("find", "/", "--name", "needle")
-statusChan := findCmd.Start() // non-blocking
+func main() {
+	// Start a long-running process, capture stdout and stderr
+	findCmd := cmd.NewCmd("find", "/", "--name", "needle")
+	statusChan := findCmd.Start() // non-blocking
 
-ticker := time.NewTicker(2 * time.Second)
+	ticker := time.NewTicker(2 * time.Second)
 
-// Print last line of stdout every 2s
-go func() {
-  for range ticker.C {
-    status := c.Status()
-    n := len(status.Stdout)
-    fmt.Println(status.Stdout[n - 1])
-  }
-}()
+	// Print last line of stdout every 2s
+	go func() {
+		for range ticker.C {
+			status := findCmd.Status()
+			n := len(status.Stdout)
+			fmt.Println(status.Stdout[n-1])
+		}
+	}()
 
-// Stop command after 1 hour
-go func() {
-  <-time.After(1 * time.Hour)
-  findCmd.Stop()
-}()
+	// Stop command after 1 hour
+	go func() {
+		<-time.After(1 * time.Hour)
+		findCmd.Stop()
+	}()
 
-// Check if command is done
-select {
-case finalStatus := <-statusChan:
-  // done
-default:
-  // no, still running
+	// Check if command is done
+	select {
+	case finalStatus := <-statusChan:
+		// done
+	default:
+		// no, still running
+	}
+
+	// Block waiting for command to exit, be stopped, or be killed
+	finalStatus := <-statusChan
 }
-
-// Block waiting for command to exit, be stopped, or be killed
-finalStatus := <-statusChan
 ```
 
 That's it, only three methods: `Start`, `Stop`, and `Status`. When possible, it's better to use `go-cmd/Cmd` than `os/exec.Cmd` because `go-cmd/Cmd` provides:
@@ -99,3 +108,18 @@ In addition to 100% test coverage and no race conditions, this package is active
 ## Acknowledgements
 
 [Brian Ip](https://github.com/BrianIp) wrote the original code to get the exit status. Strangely, Go doesn't just provide this, it requires magic like `exiterr.Sys().(syscall.WaitStatus)` and more.
+
+---
+
+## License
+
+[MIT](LICENSE) © go-Cmd.
+
+[goreport-img]: https://goreportcard.com/badge/github.com/go-cmd/cmd
+[goreport-url]: https://goreportcard.com/report/github.com/go-cmd/cmd
+[build-img]: https://travis-ci.org/go-cmd/cmd.svg?branch=master
+[build-url]: https://travis-ci.org/go-cmd/cmd
+[cover-img]: https://coveralls.io/repos/github/go-cmd/cmd/badge.svg
+[cover-url]: https://coveralls.io/github/go-cmd/cmd
+[godoc-img]: https://godoc.org/github.com/go-cmd/cmd?status.svg
+[godoc-url]: https://godoc.org/github.com/go-cmd/cmd

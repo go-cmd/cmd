@@ -341,28 +341,23 @@ func (c *Cmd) run() {
 	// is of type *ExitError. Other error types may be returned for I/O problems."
 	exitCode := 0
 	signaled := false
-	if err != nil {
-		switch err.(type) {
-		case *exec.ExitError:
-			// This is the normal case which is not really an error. It's string
-			// representation is only "*exec.ExitError". It only means the cmd
-			// did not exit zero and caller should see ExitError.Stderr, which
-			// we already have. So first we'll have this as the real/underlying
-			// type, then discard err so status.Error doesn't contain a useless
-			// "*exec.ExitError". With the real type we can get the non-zero
-			// exit code and determine if the process was signaled, which yields
-			// a more specific error message, so we set err again in that case.
-			exiterr := err.(*exec.ExitError)
-			err = nil
-			if waitStatus, ok := exiterr.Sys().(syscall.WaitStatus); ok {
-				exitCode = waitStatus.ExitStatus() // -1 if signaled
-				if waitStatus.Signaled() {
-					signaled = true
-					err = errors.New(exiterr.Error()) // "signal: terminated"
-				}
+	if err != nil && fmt.Sprintf("%T", err) == "*exec.ExitError" {
+		// This is the normal case which is not really an error. It's string
+		// representation is only "*exec.ExitError". It only means the cmd
+		// did not exit zero and caller should see ExitError.Stderr, which
+		// we already have. So first we'll have this as the real/underlying
+		// type, then discard err so status.Error doesn't contain a useless
+		// "*exec.ExitError". With the real type we can get the non-zero
+		// exit code and determine if the process was signaled, which yields
+		// a more specific error message, so we set err again in that case.
+		exiterr := err.(*exec.ExitError)
+		err = nil
+		if waitStatus, ok := exiterr.Sys().(syscall.WaitStatus); ok {
+			exitCode = waitStatus.ExitStatus() // -1 if signaled
+			if waitStatus.Signaled() {
+				signaled = true
+				err = errors.New(exiterr.Error()) // "signal: terminated"
 			}
-		default:
-			// I/O problem according to the manual ^. Don't change err.
 		}
 	}
 
@@ -546,7 +541,6 @@ func (rw *OutputStream) Write(p []byte) (n int, err error) {
 	n = len(p) // end of buffer
 	firstChar := 0
 
-LINES:
 	for {
 		// Find next newline in stream buffer. nextLine starts at 0, but buff
 		// can contain multiple lines, like "foo\nbar". So in that case nextLine
@@ -554,7 +548,7 @@ LINES:
 		// will be 3 and 7, respectively. So lines are [0:3] are [4:7].
 		newlineOffset := bytes.IndexByte(p[firstChar:], '\n')
 		if newlineOffset < 0 {
-			break LINES // no newline in stream, next line incomplete
+			break // no newline in stream, next line incomplete
 		}
 
 		// End of line offset is start (nextLine) + newline offset. Like bufio.Scanner,
