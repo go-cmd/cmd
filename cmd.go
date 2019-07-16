@@ -155,6 +155,8 @@ func NewCmdOptions(options Options, name string, args ...string) *Cmd {
 
 // Clone clones a Cmd. All the options are transferred,
 // but the state of the original object is lost.
+// Cmd is one-use only, so if you need to re-start a Cmd,
+// you need to Clone it.
 func (c *Cmd) Clone() *Cmd {
 	clone := NewCmdOptions(
 		Options{
