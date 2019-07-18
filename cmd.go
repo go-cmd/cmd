@@ -154,7 +154,7 @@ func NewCmdOptions(options Options, name string, args ...string) *Cmd {
 }
 
 // Clone clones a Cmd. All the options are transferred,
-// but the state of the original object is lost.
+// but the internal state of the original object is lost.
 // Cmd is one-use only, so if you need to re-start a Cmd,
 // you need to Clone it.
 func (c *Cmd) Clone() *Cmd {
@@ -166,8 +166,6 @@ func (c *Cmd) Clone() *Cmd {
 		c.Name,
 		c.Args...,
 	)
-	clone.Lock()
-	defer clone.Unlock()
 	clone.Dir = c.Dir
 	clone.Env = c.Env
 	return clone
