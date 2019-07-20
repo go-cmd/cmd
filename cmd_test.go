@@ -47,6 +47,26 @@ func TestCmdOK(t *testing.T) {
 	}
 }
 
+func TestCmdClone(t *testing.T) {
+	opt := cmd.Options{
+		Buffered: true,
+	}
+	c1 := cmd.NewCmdOptions(opt, "ls")
+	c1.Dir = "/tmp/"
+	c1.Env = []string{"YES=please"}
+	c2 := c1.Clone()
+
+	if c1.Name != c2.Name {
+		t.Errorf("got Name %s, expecting %s", c2.Name, c1.Name)
+	}
+	if c1.Dir != c2.Dir {
+		t.Errorf("got Dir %s, expecting %s", c2.Dir, c1.Dir)
+	}
+	if diffs := deep.Equal(c1.Env, c2.Env); diffs != nil {
+		t.Error(diffs)
+	}
+}
+
 func TestCmdNonzeroExit(t *testing.T) {
 	p := cmd.NewCmd("false")
 	gotStatus := <-p.Start()

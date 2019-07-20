@@ -153,6 +153,24 @@ func NewCmdOptions(options Options, name string, args ...string) *Cmd {
 	return out
 }
 
+// Clone clones a Cmd. All the options are transferred,
+// but the internal state of the original object is lost.
+// Cmd is one-use only, so if you need to re-start a Cmd,
+// you need to Clone it.
+func (c *Cmd) Clone() *Cmd {
+	clone := NewCmdOptions(
+		Options{
+			Buffered:  c.buffered,
+			Streaming: c.Stdout != nil,
+		},
+		c.Name,
+		c.Args...,
+	)
+	clone.Dir = c.Dir
+	clone.Env = c.Env
+	return clone
+}
+
 // Start starts the command and immediately returns a channel that the caller
 // can use to receive the final Status of the command when it ends. The caller
 // can start the command and wait like,
