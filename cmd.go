@@ -58,17 +58,15 @@ import (
 // should not be modified, except Env which can be set before calling Start.
 // To create a new Cmd, call NewCmd or NewCmdOptions.
 type Cmd struct {
-	Name   string
-	Args   []string
-	Env    []string
-	Dir    string
-	Stdout chan string // streaming STDOUT if enabled, else nil (see Options)
-	Stderr chan string // streaming STDERR if enabled, else nil (see Options)
 	*sync.Mutex
-	started    bool          // cmd.Start called, no error
-	stopped    bool          // Stop called
-	done       bool          // run() done
-	final      bool          // status finalized in Status
+	stateLock  *sync.Mutex
+	Name       string
+	Args       []string
+	Env        []string
+	Dir        string
+	State      CmdState      // The state of the cmd (stopped, started, etc)
+	Stdout     chan string   // streaming STDOUT if enabled, else nil (see Options)
+	Stderr     chan string   // streaming STDERR if enabled, else nil (see Options)
 	startTime  time.Time     // if started true
 	stdout     *OutputBuffer // low-level stdout buffering and streaming
 	stderr     *OutputBuffer // low-level stderr buffering and streaming
@@ -94,16 +92,15 @@ type Cmd struct {
 // command failed. Callers should check Error first. If nil, then check Exit and
 // Complete.
 type Status struct {
-	Cmd      string
-	PID      int
-	Complete bool     // false if stopped or signaled
-	Exit     int      // exit code of process
-	Error    error    // Go error
-	StartTs  int64    // Unix ts (nanoseconds), zero if Cmd not started
-	StopTs   int64    // Unix ts (nanoseconds), zero if Cmd not started or running
-	Runtime  float64  // seconds, zero if Cmd not started
-	Stdout   []string // buffered STDOUT; see Cmd.Status for more info
-	Stderr   []string // buffered STDERR; see Cmd.Status for more info
+	Cmd     string
+	PID     int
+	Exit    int      // exit code of process
+	Error   error    // Go error
+	StartTs int64    // Unix ts (nanoseconds), zero if Cmd not started
+	StopTs  int64    // Unix ts (nanoseconds), zero if Cmd not started or running
+	Runtime float64  // seconds, zero if Cmd not started
+	Stdout  []string // buffered STDOUT; see Cmd.Status for more info
+	Stderr  []string // buffered STDERR; see Cmd.Status for more info
 }
 
 // NewCmd creates a new Cmd for the given command name and arguments. The command
@@ -111,17 +108,17 @@ type Status struct {
 // is off. To control output, use NewCmdOptions instead.
 func NewCmd(name string, args ...string) *Cmd {
 	return &Cmd{
-		Name:     name,
-		Args:     args,
-		buffered: true,
-		Mutex:    &sync.Mutex{},
+		Name:      name,
+		Args:      args,
+		buffered:  true,
+		Mutex:     &sync.Mutex{},
+		stateLock: &sync.Mutex{},
 		status: Status{
-			Cmd:      name,
-			PID:      0,
-			Complete: false,
-			Exit:     -1,
-			Error:    nil,
-			Runtime:  0,
+			Cmd:     name,
+			PID:     0,
+			Exit:    -1,
+			Error:   nil,
+			Runtime: 0,
 		},
 		doneChan: make(chan struct{}),
 	}
@@ -190,6 +187,7 @@ func (c *Cmd) Start() <-chan Status {
 	c.Lock()
 	defer c.Unlock()
 
+	// Cannot Start if it's already started
 	if c.statusChan != nil {
 		return c.statusChan
 	}
@@ -209,13 +207,12 @@ func (c *Cmd) Stop() error {
 
 	// Nothing to stop if Start hasn't been called, or the proc hasn't started,
 	// or it's already done.
-	if c.statusChan == nil || !c.started || c.done {
+	if c.statusChan == nil || c.IsInitialState() || c.IsFinalState() {
 		return nil
 	}
 
-	// Flag that command was stopped, it didn't complete. This results in
-	// status.Complete = false
-	c.stopped = true
+	// Flag that command was stopped, it didn't complete.
+	c.setState(STOPPING)
 
 	// Signal the process group (-pid), not just the process, so that the process
 	// and all its children are signaled. Else, child procs can keep running and
@@ -245,27 +242,28 @@ func (c *Cmd) Status() Status {
 	defer c.Unlock()
 
 	// Return default status if cmd hasn't been started
-	if c.statusChan == nil || !c.started {
+	if c.statusChan == nil || c.IsInitialState() {
 		return c.status
 	}
 
-	if c.done {
-		// No longer running
-		if !c.final {
-			if c.buffered {
-				c.status.Stdout = c.stdout.Lines()
-				c.status.Stderr = c.stderr.Lines()
-				c.stdout = nil // release buffers
-				c.stderr = nil
-			}
-			c.final = true
+	if c.IsFinalState() {
+		// No longer running and the cmd buffer wasn't flushed
+		if c.buffered && c.status.Stdout == nil {
+			c.status.Stdout = c.stdout.Lines()
+			c.status.Stderr = c.stderr.Lines()
+			c.stdout = nil // release buffers
+			c.stderr = nil
 		}
 	} else {
 		// Still running
 		c.status.Runtime = time.Now().Sub(c.startTime).Seconds()
 		if c.buffered {
-			c.status.Stdout = c.stdout.Lines()
-			c.status.Stderr = c.stderr.Lines()
+			if c.stdout != nil {
+				c.status.Stdout = c.stdout.Lines()
+			}
+			if c.stderr != nil {
+				c.status.Stderr = c.stderr.Lines()
+			}
 		}
 	}
 
@@ -274,18 +272,57 @@ func (c *Cmd) Status() Status {
 
 // Done returns a channel that's closed when the command stops running.
 // This method is useful for multiple goroutines to wait for the command
-// to finish.Call Status after the command finishes to get its final status.
+// to finish. Call Status after the command finishes to get its final status.
 func (c *Cmd) Done() <-chan struct{} {
 	return c.doneChan
 }
 
+// IsInitialState returns true if the Cmd is in the initial state.
+func (c *Cmd) IsInitialState() bool {
+	c.stateLock.Lock()
+	defer c.stateLock.Unlock()
+	return c.State == INITIAL
+}
+
+// IsFinalState returns true if the Cmd is in a final state.
+// Final states are definitive and cannot be exited from.
+func (c *Cmd) IsFinalState() bool {
+	c.stateLock.Lock()
+	defer c.stateLock.Unlock()
+	return c.State == INTERRUPT || c.State == FINISHED || c.State == FATAL
+}
+
 // --------------------------------------------------------------------------
+
+// setState sets the new internal state and might be used to trigger events.
+// It has a minimal validation of states.
+func (c *Cmd) setState(state CmdState) {
+	// If the new state is the old state, skip
+	// Final states cannot be changed, skip
+	if c.State == state || c.IsFinalState() {
+		return
+	} else if c.IsInitialState() {
+		c.stateLock.Lock()
+		// The only possible state after "initial" is "starting"
+		c.State = STARTING
+		c.stateLock.Unlock()
+	} else {
+		c.stateLock.Lock()
+		c.State = state
+		c.stateLock.Unlock()
+	}
+	// TODO: emit state changes in the future
+}
 
 func (c *Cmd) run() {
 	defer func() {
 		c.statusChan <- c.Status() // unblocks Start if caller is waiting
 		close(c.doneChan)
 	}()
+
+	c.Lock()
+	c.setState(STARTING)
+	c.Unlock()
 
 	// //////////////////////////////////////////////////////////////////////
 	// Setup command
@@ -335,7 +372,7 @@ func (c *Cmd) run() {
 		c.status.Error = err
 		c.status.StartTs = now.UnixNano()
 		c.status.StopTs = time.Now().UnixNano()
-		c.done = true
+		c.setState(FATAL)
 		c.Unlock()
 		return
 	}
@@ -345,7 +382,7 @@ func (c *Cmd) run() {
 	c.startTime = now              // command is running
 	c.status.PID = cmd.Process.Pid // command is running
 	c.status.StartTs = now.UnixNano()
-	c.started = true
+	c.setState(RUNNING)
 	c.Unlock()
 
 	// //////////////////////////////////////////////////////////////////////
@@ -353,12 +390,15 @@ func (c *Cmd) run() {
 	// //////////////////////////////////////////////////////////////////////
 	err := cmd.Wait()
 	now = time.Now()
+	exitCode := 0
+
+	// Set final status
+	c.Lock()
+	defer c.Unlock()
 
 	// Get exit code of the command. According to the manual, Wait() returns:
 	// "If the command fails to run or doesn't complete successfully, the error
 	// is of type *ExitError. Other error types may be returned for I/O problems."
-	exitCode := 0
-	signaled := false
 	if err != nil && fmt.Sprintf("%T", err) == "*exec.ExitError" {
 		// This is the normal case which is not really an error. It's string
 		// representation is only "*exec.ExitError". It only means the cmd
@@ -373,23 +413,17 @@ func (c *Cmd) run() {
 		if waitStatus, ok := exiterr.Sys().(syscall.WaitStatus); ok {
 			exitCode = waitStatus.ExitStatus() // -1 if signaled
 			if waitStatus.Signaled() {
-				signaled = true
 				err = errors.New(exiterr.Error()) // "signal: terminated"
+				c.setState(INTERRUPT)
 			}
 		}
 	}
 
-	// Set final status
-	c.Lock()
-	if !c.stopped && !signaled {
-		c.status.Complete = true
-	}
 	c.status.Runtime = now.Sub(c.startTime).Seconds()
 	c.status.StopTs = now.UnixNano()
 	c.status.Exit = exitCode
 	c.status.Error = err
-	c.done = true
-	c.Unlock()
+	c.setState(FINISHED)
 }
 
 // //////////////////////////////////////////////////////////////////////////
