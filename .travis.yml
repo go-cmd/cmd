@@ -10,6 +10,5 @@ env:
 before_install:
   - go mod vendor
   - go get github.com/mattn/goveralls
-  - ls -alt $GOPATH/bin
 script:
   - $GOPATH/bin/goveralls -service=travis-ci -race -show -package github.com/go-cmd/cmd
