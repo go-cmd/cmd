@@ -6,6 +6,9 @@ go:
   - "1.12"
   - "1.13"
 
+env:
+  - GO111MODULE=on
+
 before_install:
   - go mod vendor
 script:
