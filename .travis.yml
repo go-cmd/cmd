@@ -2,8 +2,6 @@ language: go
 sudo: false
 
 go:
-  - "1.11"
-  - "1.12"
   - "1.13"
 
 env:
@@ -11,5 +9,6 @@ env:
 
 before_install:
   - go mod vendor
+  - go get github.com/mattn/goveralls
 script:
   - $GOPATH/bin/goveralls -service=travis-ci -race -show -package github.com/go-cmd/cmd
