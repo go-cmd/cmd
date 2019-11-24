@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"path"
 	"testing"
 	"time"
 
@@ -99,7 +100,7 @@ func TestCmdStop(t *testing.T) {
 	// to kill the proc right after count "1" to ensure Stdout only contains "1"
 	// and also to ensure that the proc is really killed instantly because if
 	// it's not then timeout below will trigger.
-	p := cmd.NewCmd("./test/count-and-sleep", "3", "5")
+	p := cmd.NewCmd(path.Join(".", "test", "count-and-sleep"), "3", "5")
 
 	// Start process in bg and get chan to receive final Status when done
 	statusChan := p.Start()
@@ -201,7 +202,7 @@ func TestCmdOutput(t *testing.T) {
 	t.Logf("temp file: %s", tmpfile.Name())
 	os.Remove(tmpfile.Name())
 
-	p := cmd.NewCmd("./test/touch-file-count", tmpfile.Name())
+	p := cmd.NewCmd(path.Join(".", "test", "touch-file-count"), tmpfile.Name())
 
 	p.Start()
 
@@ -277,7 +278,7 @@ func TestCmdNotFound(t *testing.T) {
 
 func TestDone(t *testing.T) {
 	// Count to 3 sleeping 1s between counts
-	p := cmd.NewCmd("./test/count-and-sleep", "3", "1")
+	p := cmd.NewCmd(path.Join(".", "test", "count-and-sleep"), "3", "1")
 	statusChan := p.Start()
 
 	// For 2s while cmd is running, Done() chan should block, which means
