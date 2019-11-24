@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"fmt"
+	"os"
 	"os/exec"
 	"syscall"
 )
