@@ -1,6 +1,10 @@
 language: go
 sudo: false
 
+os:
+  - linux
+  - windows
+
 go:
   - "1.13"
 

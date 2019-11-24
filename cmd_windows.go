@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"fmt"
+	"os"
 	"os/exec"
 	"syscall"
 )
@@ -11,8 +11,8 @@ import (
 // Stop is called immediately after the command ends but before Start can
 // update its internal state.
 func terminateProcess(pid int) error {
-	kill := exec.Command("TASKKILL", "/T", "/F", "/PID", fmt.Sprintf("%d", pid))
-	return kill.Run()
+	p := &os.Process{Pid: pid}
+	return p.Kill()
 }
 
 func setProcessGroupID(cmd *exec.Cmd) {
