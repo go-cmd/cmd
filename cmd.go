@@ -220,7 +220,7 @@ func (c *Cmd) Stop() error {
 	// Signal the process group (-pid), not just the process, so that the process
 	// and all its children are signaled. Else, child procs can keep running and
 	// keep the stdout/stderr fd open and cause cmd.Wait to hang.
-	return syscall.Kill(-c.status.PID, syscall.SIGTERM)
+	return terminateProcess(c.status.PID)
 }
 
 // Status returns the Status of the command at any time. It is safe to call
@@ -292,10 +292,8 @@ func (c *Cmd) run() {
 	// //////////////////////////////////////////////////////////////////////
 	cmd := exec.Command(c.Name, c.Args...)
 
-	// Set process group ID so the cmd and all its children become a new
-	// process group. This allows Stop to SIGTERM the cmd's process group
-	// without killing this process (i.e. this code here).
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// Platform-specific SysProcAttr management
+	setProcessGroupID(cmd)
 
 	// Write stdout and stderr to buffers that are safe to read while writing
 	// and don't cause a race condition.
