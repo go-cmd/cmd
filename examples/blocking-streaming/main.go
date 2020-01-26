@@ -1,9 +1,10 @@
 package main
 
+// This example requires go-cmd v1.2 or newer
+
 import (
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/go-cmd/cmd"
 )
@@ -16,15 +17,27 @@ func main() {
 	}
 
 	// Create Cmd with options
-	envCmd := cmd.NewCmdOptions(cmdOptions, "env")
+	envCmd := cmd.NewCmdOptions(cmdOptions, "./print-some-lines")
 
 	// Print STDOUT and STDERR lines streaming from Cmd
+	doneChan := make(chan struct{})
 	go func() {
-		for {
+		defer close(doneChan)
+		// Done when both channels have been closed
+		// https://dave.cheney.net/2013/04/30/curious-channels
+		for envCmd.Stdout != nil || envCmd.Stderr != nil {
 			select {
-			case line := <-envCmd.Stdout:
+			case line, open := <-envCmd.Stdout:
+				if !open {
+					envCmd.Stdout = nil
+					continue
+				}
 				fmt.Println(line)
-			case line := <-envCmd.Stderr:
+			case line, open := <-envCmd.Stderr:
+				if !open {
+					envCmd.Stderr = nil
+					continue
+				}
 				fmt.Fprintln(os.Stderr, line)
 			}
 		}
@@ -33,8 +46,6 @@ func main() {
 	// Run and wait for Cmd to return, discard Status
 	<-envCmd.Start()
 
-	// Cmd has finished but wait for goroutine to print all lines
-	for len(envCmd.Stdout) > 0 || len(envCmd.Stderr) > 0 {
-		time.Sleep(10 * time.Millisecond)
-	}
+	// Wait for goroutine to print everything
+	<-doneChan
 }

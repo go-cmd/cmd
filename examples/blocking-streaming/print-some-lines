@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# This script just prints some lines to simulate random command out
+# that is streamed and printed by main.go.
+
+for i in 1 2 3 4 5; do
+  echo "Line $i"
+  sleep 0.2
+done
+
+echo "One more..."
+sleep 1
+
+echo "Last line"
