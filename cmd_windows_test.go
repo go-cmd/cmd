@@ -96,13 +96,7 @@ func TestCmdNonzeroExit(t *testing.T) {
 }
 
 func TestCmdStop(t *testing.T) {
-	t.Skip("FIXME")
-
-	// Count to 3 sleeping 5s between counts. The long sleep is because we want
-	// to kill the proc right after count "1" to ensure Stdout only contains "1"
-	// and also to ensure that the proc is really killed instantly because if
-	// it's not then timeout below will trigger.
-	p := cmd.NewCmd(path.Join(".", "test", "count-and-sleep"), "3", "5")
+	p := cmd.NewCmd("sleep", "5")
 
 	// Start process in bg and get chan to receive final Status when done
 	statusChan := p.Start()
@@ -135,13 +129,13 @@ func TestCmdStop(t *testing.T) {
 	gotStatus.StopTs = 0
 
 	expectStatus := cmd.Status{
-		Cmd:      "./test/count-and-sleep",
-		PID:      gotStatus.PID,                    // nondeterministic
-		Complete: false,                            // signaled by Stop
-		Exit:     -1,                               // signaled by Stop
-		Error:    errors.New("signal: terminated"), // signaled by Stop
-		Runtime:  gotStatus.Runtime,                // nondeterministic
-		Stdout:   []string{"1"},
+		Cmd:      "sleep",
+		PID:      gotStatus.PID, // nondeterministic
+		Complete: false,
+		Exit:     1,
+		Error:    nil,
+		Runtime:  gotStatus.Runtime, // nondeterministic
+		Stdout:   []string{},
 		Stderr:   []string{},
 	}
 	if diffs := deep.Equal(gotStatus, expectStatus); diffs != nil {
