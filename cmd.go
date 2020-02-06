@@ -289,6 +289,7 @@ func (c *Cmd) Done() <-chan struct{} {
 }
 
 // --------------------------------------------------------------------------
+var CommandExecutor = exec.Command
 
 func (c *Cmd) run() {
 	defer func() {
@@ -299,7 +300,7 @@ func (c *Cmd) run() {
 	// //////////////////////////////////////////////////////////////////////
 	// Setup command
 	// //////////////////////////////////////////////////////////////////////
-	cmd := exec.Command(c.Name, c.Args...)
+	cmd := CommandExecutor(c.Name, c.Args...)
 
 	// Platform-specific SysProcAttr management
 	setProcessGroupID(cmd)
