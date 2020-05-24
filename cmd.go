@@ -335,6 +335,8 @@ func (c *Cmd) run() {
 	// who's waiting for us to close them.
 	if c.stdoutStream != nil {
 		defer func() {
+			c.stdoutStream.Flush()
+			c.stderrStream.Flush()
 			// exec.Cmd.Wait has already waited for all output:
 			//   Otherwise, during the execution of the command a separate goroutine
 			//   reads from the process over a pipe and delivers that data to the
@@ -645,4 +647,12 @@ func (rw *OutputStream) Lines() <-chan string {
 func (rw *OutputStream) SetLineBufferSize(n int) {
 	rw.bufSize = n
 	rw.buf = make([]byte, rw.bufSize)
+}
+
+// Flush empties the buffer of its last line.
+func (rw *OutputStream) Flush() {
+	if rw.lastChar > 0 {
+		line := string(rw.buf[0:rw.lastChar])
+		rw.streamChan <- line
+	}
 }
