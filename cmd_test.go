@@ -559,7 +559,7 @@ func TestStreamingMultipleLines(t *testing.T) {
 	}
 
 	// Write two short lines
-	input := "foo\nbar\n"
+	input := "foo\nbar"
 	n, err := out.Write([]byte(input))
 	if n != len(input) {
 		t.Errorf("Write n = %d, expected %d", n, len(input))
@@ -580,6 +580,8 @@ func TestStreamingMultipleLines(t *testing.T) {
 	if gotLine != "foo" {
 		t.Errorf("got line: '%s', expected 'foo'", gotLine)
 	}
+
+	out.Flush()
 
 	// Get next line
 	select {
