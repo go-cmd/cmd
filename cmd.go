@@ -195,7 +195,12 @@ func (c *Cmd) Clone() *Cmd {
 // Exactly one Status is sent on the channel when the command ends. The channel
 // is not closed. Any Go error is set to Status.Error. Start is idempotent; it
 // always returns the same channel.
+
 func (c *Cmd) Start() <-chan Status {
+	return c.StartWithStdin(nil)
+}
+
+func (c *Cmd) StartWithStdin(in io.Reader) <-chan Status {
 	c.Lock()
 	defer c.Unlock()
 
@@ -204,7 +209,7 @@ func (c *Cmd) Start() <-chan Status {
 	}
 
 	c.statusChan = make(chan Status, 1)
-	go c.run()
+	go c.run(in)
 	return c.statusChan
 }
 
@@ -290,7 +295,7 @@ func (c *Cmd) Done() <-chan struct{} {
 
 // --------------------------------------------------------------------------
 
-func (c *Cmd) run() {
+func (c *Cmd) run(in io.Reader) {
 	defer func() {
 		c.statusChan <- c.Status() // unblocks Start if caller is waiting
 		close(c.doneChan)
@@ -300,6 +305,9 @@ func (c *Cmd) run() {
 	// Setup command
 	// //////////////////////////////////////////////////////////////////////
 	cmd := exec.Command(c.Name, c.Args...)
+	if in != nil {
+		cmd.Stdin = in
+	}
 
 	// Platform-specific SysProcAttr management
 	setProcessGroupID(cmd)
