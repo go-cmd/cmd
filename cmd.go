@@ -195,11 +195,11 @@ func (c *Cmd) Clone() *Cmd {
 // Exactly one Status is sent on the channel when the command ends. The channel
 // is not closed. Any Go error is set to Status.Error. Start is idempotent; it
 // always returns the same channel.
-
 func (c *Cmd) Start() <-chan Status {
 	return c.StartWithStdin(nil)
 }
 
+// StartWithStdin is the same as Start but uses in for STDIN.
 func (c *Cmd) StartWithStdin(in io.Reader) <-chan Status {
 	c.Lock()
 	defer c.Unlock()
