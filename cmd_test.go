@@ -3,6 +3,7 @@
 package cmd_test
 
 import (
+	"bytes"
 	"errors"
 	"io/ioutil"
 	"os"
@@ -1026,5 +1027,54 @@ func TestCmdNoOutput(t *testing.T) {
 	}
 	if len(s.Stderr) != 0 {
 		t.Errorf("got stderr, expected no output: %v", s.Stderr)
+	}
+}
+
+func TestStdinOk(t *testing.T) {
+
+	tests := []struct {
+		in []byte
+	}{
+		{
+			in: []byte("1"),
+		},
+		{
+			in: []byte("hello"),
+		},
+		{
+			in: []byte{65, 66, 67, 226, 130, 172}, // ABC€
+		},
+	}
+	for _, tt := range tests {
+		now := time.Now().Unix()
+		p := cmd.NewCmd("test/stdin")
+		gotStatus := <-p.StartWithStdin(bytes.NewReader(tt.in))
+		expectStatus := cmd.Status{
+			Cmd:      "test/stdin",
+			PID:      gotStatus.PID, // nondeterministic
+			Complete: true,
+			Exit:     0,
+			Error:    nil,
+			Runtime:  gotStatus.Runtime, // nondeterministic
+			Stdout:   []string{"stdin: " + string(tt.in)},
+			Stderr:   []string{},
+		}
+		if gotStatus.StartTs < now {
+			t.Error("StartTs < now")
+		}
+		if gotStatus.StopTs < gotStatus.StartTs {
+			t.Error("StopTs < StartTs")
+		}
+		gotStatus.StartTs = 0
+		gotStatus.StopTs = 0
+		if diffs := deep.Equal(gotStatus, expectStatus); diffs != nil {
+			t.Error(diffs)
+		}
+		if gotStatus.PID < 0 {
+			t.Errorf("got PID %d, expected non-zero", gotStatus.PID)
+		}
+		if gotStatus.Runtime < 0 {
+			t.Errorf("got runtime %f, expected non-zero", gotStatus.Runtime)
+		}
 	}
 }
