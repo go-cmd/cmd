@@ -79,6 +79,10 @@ type Cmd struct {
 	doneChan     chan struct{} // closed when done running
 }
 
+var (
+	ErrNotStarted = errors.New("command not running")
+)
+
 // Status represents the running status and consolidated return of a Cmd. It can
 // be obtained any time by calling Cmd.Status. If StartTs > 0, the command has
 // started. If StopTs > 0, the command has stopped. After the command finishes
@@ -214,16 +218,30 @@ func (c *Cmd) StartWithStdin(in io.Reader) <-chan Status {
 }
 
 // Stop stops the command by sending its process group a SIGTERM signal.
-// Stop is idempotent. An error should only be returned in the rare case that
-// Stop is called immediately after the command ends but before Start can
-// update its internal state.
+// Stop is idempotent. Stopping and already stopped command returns nil.
+//
+// Stop returns ErrNotStarted if called before Start or StartWithStdin. If the
+// command is very slow to start, Stop can return ErrNotStarted after calling
+// Start or StartWithStdin because this package is still waiting for the system
+// to start the process. All other return errors are from the low-level system
+// function for process termination.
 func (c *Cmd) Stop() error {
 	c.Lock()
 	defer c.Unlock()
 
-	// Nothing to stop if Start hasn't been called, or the proc hasn't started,
-	// or it's already done.
-	if c.statusChan == nil || !c.started || c.done {
+	// c.statusChan is created in StartWithStdin()/Start(), so if nil the caller
+	// hasn't started the command yet. c.started is set true in run() only after
+	// the underlying os/exec.Cmd.Start() has returned without an error, so we're
+	// sure the command has started (although it might exit immediately after,
+	// we at least know it started).
+	if c.statusChan == nil || !c.started {
+		return ErrNotStarted
+	}
+
+	// c.done is set true as the very last thing run() does before returning.
+	// If it's true, we're certain the command is completely done (regardless
+	// of its exit status), so it can't be running.
+	if c.done {
 		return nil
 	}
 

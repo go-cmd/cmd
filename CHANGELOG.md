@@ -1,10 +1,14 @@
 # go-cmd/cmd Changelog
 
-## v1.2
+## v1.3
 
-### v1.2.2 (2020-10-31)
+### v1.3.0 (2020-10-31)
 
 * Fixed last line not flushed if incomplete (PR #48) (@greut)
+* Added ErrNotStarted
+* Changed Stop() to return ErrNotStarted (issue #16)
+
+## v1.2
 
 ### v1.2.1 (2020-07-11)
 

@@ -186,7 +186,7 @@ func TestCmdNotStarted(t *testing.T) {
 	}
 
 	err := p.Stop()
-	if err != nil {
+	if err != cmd.ErrNotStarted {
 		t.Error(err)
 	}
 }
