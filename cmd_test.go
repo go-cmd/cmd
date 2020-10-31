@@ -560,7 +560,7 @@ func TestStreamingMultipleLines(t *testing.T) {
 	}
 
 	// Write two short lines
-	input := "foo\nbar"
+	input := "foo\nbar\n"
 	n, err := out.Write([]byte(input))
 	if n != len(input) {
 		t.Errorf("Write n = %d, expected %d", n, len(input))
@@ -582,7 +582,54 @@ func TestStreamingMultipleLines(t *testing.T) {
 		t.Errorf("got line: '%s', expected 'foo'", gotLine)
 	}
 
-	out.Flush()
+	// Get next line
+	select {
+	case gotLine = <-lines:
+	default:
+		t.Fatal("blocked on <-lines")
+	}
+
+	if gotLine != "bar" {
+		t.Errorf("got line: '%s', expected 'bar'", gotLine)
+	}
+}
+
+func TestStreamingMultipleLinesLastNotTerminated(t *testing.T) {
+	// If last line isn't \n terminated, go-cmd should flush it anyway
+	// https://github.com/go-cmd/cmd/pull/48
+	lines := make(chan string, 5)
+	out := cmd.NewOutputStream(lines)
+
+	// Quick side test: Lines() chan string should be the same chan string
+	// we created the object with
+	if out.Lines() != lines {
+		t.Errorf("Lines() does not return the given string chan")
+	}
+
+	// Write two short lines
+	input := "foo\nbar" // <- last line doesn't have \n
+	n, err := out.Write([]byte(input))
+	if n != len(input) {
+		t.Errorf("Write n = %d, expected %d", n, len(input))
+	}
+	if err != nil {
+		t.Errorf("got err '%v', expected nil", err)
+	}
+
+	// Get one line
+	var gotLine string
+	select {
+	case gotLine = <-lines:
+	default:
+		t.Fatal("blocked on <-lines")
+	}
+
+	// "foo" should be sent before "bar" because that was the input
+	if gotLine != "foo" {
+		t.Errorf("got line: '%s', expected 'foo'", gotLine)
+	}
+
+	out.Flush() // flush our output so go-cmd receives it
 
 	// Get next line
 	select {
