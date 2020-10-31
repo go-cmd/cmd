@@ -2,6 +2,10 @@
 
 ## v1.2
 
+### v1.2.2 (2020-10-31)
+
+* Fixed last line not flushed if incomplete (PR #48) (@greut)
+
 ### v1.2.1 (2020-07-11)
 
 * Added `StartWithStdin(io.Reader)` (PR #50) (@juanenriqueescobar)
