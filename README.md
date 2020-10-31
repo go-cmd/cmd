@@ -5,7 +5,7 @@
 [![Coverage report][cover-img]][cover-url]
 [![GoDoc][godoc-img]][godoc-url]
 
-This package is a small but very useful wrapper around [os/exec.Cmd](https://golang.org/pkg/os/exec/#Cmd) for Linux and macOS that makes it safe and simple to run external commands in highly concurrent, asynchronous, real-time applications. Here's the look and feel:
+This package is a small but very useful wrapper around [os/exec.Cmd](https://golang.org/pkg/os/exec/#Cmd) that makes it safe and simple to run external commands in highly concurrent, asynchronous, real-time applications. It works on Linux, macOS, and Windows. Here's the basic usage:
 
 ```go
 import (
@@ -122,4 +122,4 @@ In addition to 100% test coverage and no race conditions, this package is active
 [cover-img]: https://coveralls.io/repos/github/go-cmd/cmd/badge.svg
 [cover-url]: https://coveralls.io/github/go-cmd/cmd
 [godoc-img]: https://godoc.org/github.com/go-cmd/cmd?status.svg
-[godoc-url]: https://godoc.org/github.com/go-cmd/cmd
+[godoc-url]: https://pkg.go.dev/github.com/go-cmd/cmd?tab=doc

@@ -3,6 +3,7 @@
 package cmd_test
 
 import (
+	"bytes"
 	"errors"
 	"io/ioutil"
 	"os"
@@ -593,6 +594,55 @@ func TestStreamingMultipleLines(t *testing.T) {
 	}
 }
 
+func TestStreamingMultipleLinesLastNotTerminated(t *testing.T) {
+	// If last line isn't \n terminated, go-cmd should flush it anyway
+	// https://github.com/go-cmd/cmd/pull/48
+	lines := make(chan string, 5)
+	out := cmd.NewOutputStream(lines)
+
+	// Quick side test: Lines() chan string should be the same chan string
+	// we created the object with
+	if out.Lines() != lines {
+		t.Errorf("Lines() does not return the given string chan")
+	}
+
+	// Write two short lines
+	input := "foo\nbar" // <- last line doesn't have \n
+	n, err := out.Write([]byte(input))
+	if n != len(input) {
+		t.Errorf("Write n = %d, expected %d", n, len(input))
+	}
+	if err != nil {
+		t.Errorf("got err '%v', expected nil", err)
+	}
+
+	// Get one line
+	var gotLine string
+	select {
+	case gotLine = <-lines:
+	default:
+		t.Fatal("blocked on <-lines")
+	}
+
+	// "foo" should be sent before "bar" because that was the input
+	if gotLine != "foo" {
+		t.Errorf("got line: '%s', expected 'foo'", gotLine)
+	}
+
+	out.Flush() // flush our output so go-cmd receives it
+
+	// Get next line
+	select {
+	case gotLine = <-lines:
+	default:
+		t.Fatal("blocked on <-lines")
+	}
+
+	if gotLine != "bar" {
+		t.Errorf("got line: '%s', expected 'bar'", gotLine)
+	}
+}
+
 func TestStreamingBlankLines(t *testing.T) {
 	lines := make(chan string, 5)
 	out := cmd.NewOutputStream(lines)
@@ -1026,5 +1076,54 @@ func TestCmdNoOutput(t *testing.T) {
 	}
 	if len(s.Stderr) != 0 {
 		t.Errorf("got stderr, expected no output: %v", s.Stderr)
+	}
+}
+
+func TestStdinOk(t *testing.T) {
+
+	tests := []struct {
+		in []byte
+	}{
+		{
+			in: []byte("1"),
+		},
+		{
+			in: []byte("hello"),
+		},
+		{
+			in: []byte{65, 66, 67, 226, 130, 172}, // ABC€
+		},
+	}
+	for _, tt := range tests {
+		now := time.Now().Unix()
+		p := cmd.NewCmd("test/stdin")
+		gotStatus := <-p.StartWithStdin(bytes.NewReader(tt.in))
+		expectStatus := cmd.Status{
+			Cmd:      "test/stdin",
+			PID:      gotStatus.PID, // nondeterministic
+			Complete: true,
+			Exit:     0,
+			Error:    nil,
+			Runtime:  gotStatus.Runtime, // nondeterministic
+			Stdout:   []string{"stdin: " + string(tt.in)},
+			Stderr:   []string{},
+		}
+		if gotStatus.StartTs < now {
+			t.Error("StartTs < now")
+		}
+		if gotStatus.StopTs < gotStatus.StartTs {
+			t.Error("StopTs < StartTs")
+		}
+		gotStatus.StartTs = 0
+		gotStatus.StopTs = 0
+		if diffs := deep.Equal(gotStatus, expectStatus); diffs != nil {
+			t.Error(diffs)
+		}
+		if gotStatus.PID < 0 {
+			t.Errorf("got PID %d, expected non-zero", gotStatus.PID)
+		}
+		if gotStatus.Runtime < 0 {
+			t.Errorf("got runtime %f, expected non-zero", gotStatus.Runtime)
+		}
 	}
 }

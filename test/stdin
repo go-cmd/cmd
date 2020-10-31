@@ -1,0 +1,5 @@
+#!/bin/bash
+
+IN=$(< /dev/stdin)
+
+echo "stdin: $IN"
