@@ -11,6 +11,6 @@ go:
 
 before_install:
   - go mod vendor
-  - go get github.com/mattn/goveralls
+  - go get github.com/mattn/goveralls@master
 script:
-  - $GOPATH/bin/goveralls -service=travis-ci -race -show -debug
+  - $GOPATH/bin/goveralls -service=travis-ci -race -show -package github.com/go-cmd/cmd
