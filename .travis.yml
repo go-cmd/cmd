@@ -3,7 +3,7 @@ sudo: false
 
 os:
   - linux
-  - windows
+#  - windows
 
 go:
   - "1.13"
