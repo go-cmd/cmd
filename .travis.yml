@@ -3,15 +3,16 @@ sudo: false
 
 os:
   - linux
-#  - windows
+  - windows
 
 go:
   - "1.13"
   - "1.14"
 
 before_install:
+  - go get github.com/mattn/goveralls
   - go mod vendor
-  - go get github.com/mattn/goveralls@master
+
 script:
   - go test -race ./...
 # - $GOPATH/bin/goveralls -service=travis-ci -race -show -package github.com/go-cmd/cmd
