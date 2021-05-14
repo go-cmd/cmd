@@ -77,6 +77,7 @@ type Cmd struct {
 	status       Status
 	statusChan   chan Status   // nil until Start() called
 	doneChan     chan struct{} // closed when done running
+	startedChan  chan struct{} // closed when started convert to true
 }
 
 var (
@@ -390,6 +391,7 @@ func (c *Cmd) run(in io.Reader) {
 	c.status.PID = cmd.Process.Pid // command is running
 	c.status.StartTs = now.UnixNano()
 	c.started = true
+	close(c.startedChan)
 	c.Unlock()
 
 	// //////////////////////////////////////////////////////////////////////
