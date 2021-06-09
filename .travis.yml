@@ -6,8 +6,9 @@ os:
   - windows
 
 go:
-  - "1.13"
   - "1.14"
+  - "1.15"
+  - "1.16"
 
 before_install:
   - go get github.com/mattn/goveralls
