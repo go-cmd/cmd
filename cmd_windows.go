@@ -16,5 +16,8 @@ func terminateProcess(pid int) error {
 }
 
 func setProcessGroupID(cmd *exec.Cmd) {
-	cmd.SysProcAttr = &syscall.SysProcAttr{}
+	// Set create new process group so the cmd and all its children become a new
+	// process group. This allows Stop to SIGTERM the cmd's process group
+	// without killing this process (i.e. this code here).
+	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP}
 }
