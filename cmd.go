@@ -130,6 +130,10 @@ type Options struct {
 	// faster and more efficient than polling Cmd.Status. The caller must read both
 	// streaming channels, else lines are dropped silently.
 	Streaming bool
+
+	// If Streaming is true and SplitChar is set, Cmd.Stdout and Cmd.Stderr
+	// channels will be split using this char instead of the default '\n'.
+	SplitChar *byte
 }
 
 // NewCmdOptions creates a new Cmd with options. The command is not started
@@ -161,6 +165,11 @@ func NewCmdOptions(options Options, name string, args ...string) *Cmd {
 
 		c.Stderr = make(chan string, DEFAULT_STREAM_CHAN_SIZE)
 		c.stderrStream = NewOutputStream(c.Stderr)
+
+		if options.SplitChar != nil {
+			c.stdoutStream.splitChar = *options.SplitChar
+			c.stderrStream.splitChar = *options.SplitChar
+		}
 	}
 
 	return c
@@ -572,6 +581,7 @@ type OutputStream struct {
 	bufSize    int
 	buf        []byte
 	lastChar   int
+	splitChar  byte
 }
 
 // NewOutputStream creates a new streaming output on the given channel. The
@@ -581,9 +591,10 @@ func NewOutputStream(streamChan chan string) *OutputStream {
 	out := &OutputStream{
 		streamChan: streamChan,
 		// --
-		bufSize:  DEFAULT_LINE_BUFFER_SIZE,
-		buf:      make([]byte, DEFAULT_LINE_BUFFER_SIZE),
-		lastChar: 0,
+		bufSize:   DEFAULT_LINE_BUFFER_SIZE,
+		buf:       make([]byte, DEFAULT_LINE_BUFFER_SIZE),
+		lastChar:  0,
+		splitChar: '\n',
 	}
 	return out
 }
@@ -599,7 +610,7 @@ func (rw *OutputStream) Write(p []byte) (n int, err error) {
 		// can contain multiple lines, like "foo\nbar". So in that case nextLine
 		// will be 0 ("foo\nbar\n") then 4 ("bar\n") on next iteration. And i
 		// will be 3 and 7, respectively. So lines are [0:3] are [4:7].
-		newlineOffset := bytes.IndexByte(p[firstChar:], '\n')
+		newlineOffset := bytes.IndexByte(p[firstChar:], rw.splitChar)
 		if newlineOffset < 0 {
 			break // no newline in stream, next line incomplete
 		}
