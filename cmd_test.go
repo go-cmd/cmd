@@ -353,7 +353,7 @@ func TestCmdBothOutput(t *testing.T) {
 	//   stdout 2
 	//   stderr 2
 	// Where each is printed on stdout and stderr as indicated.
-	p := cmd.NewCmdOptions(cmd.Options{Buffered: true, Streaming: true}, "./test/stream", tmpfile.Name())
+	p := cmd.NewCmdOptions(cmd.Options{Buffered: true, BufferedCombined: false, Streaming: true}, "./test/stream", tmpfile.Name())
 	p.Start()
 	time.Sleep(250 * time.Millisecond) // give test/stream a moment to print something
 
@@ -437,6 +437,119 @@ func TestCmdBothOutput(t *testing.T) {
 	}
 }
 
+func TestCmdBufferedCombinedOutput(t *testing.T) {
+	tmpfile, err := ioutil.TempFile("", "cmd.TestBuffCombdgOutput")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tmpfile.Name())
+	if err := tmpfile.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(tmpfile.Name()); err != nil {
+		t.Fatal(err)
+	}
+
+	touchFile := func(file string) {
+		if err := exec.Command("touch", file).Run(); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	// Streams a count to stdout and stderr until given file exists
+	// Output like:
+	//   stdout 1
+	//   stderr 1
+	//   stdout 2
+	//   stderr 2
+	// Where each is printed on stdout and stderr as indicated.
+	p := cmd.NewCmdOptions(cmd.Options{Buffered: true, BufferedCombined: true, Streaming: true}, "./test/stream", tmpfile.Name())
+	p.Start()
+	time.Sleep(250 * time.Millisecond) // give test/stream a moment to print something
+
+	timeout := time.After(10 * time.Second) // test timeout
+
+	// test/stream is spewing output, so we should be able to read it while
+	// the cmd is running. Try and fetch 3 lines from stdout and stderr.
+	i := 0
+	stdoutPrevLine := ""
+	stderrPrevLine := ""
+	readLines := 3
+	lines := 0
+	for i < readLines {
+		i++
+
+		// STDOUT should be getting STDERR as well
+		select {
+		case curLine := <-p.Stdout:
+			t.Logf("got line: '%s'", curLine)
+			if curLine == "" {
+				// Shouldn't happen because test/stream doesn't print empty lines.
+				// This indicates a bug in the stream buffer handling.
+				t.Fatal("got empty line")
+			}
+			if stdoutPrevLine != "" && curLine == stdoutPrevLine {
+				t.Fatalf("current line == previous line, expected new output:\ncprev: %s\ncur: %s\n", stdoutPrevLine, curLine)
+			}
+			stdoutPrevLine = curLine
+			lines++
+		case <-timeout:
+			t.Fatal("timeout reading streaming output")
+		default:
+		}
+
+		// STDERR
+		select {
+		case curLine := <-p.Stderr:
+			t.Logf("got line: '%s'", curLine)
+			if curLine == "" {
+				// Shouldn't happen because test/stream doesn't print empty lines.
+				// This indicates a bug in the stream buffer handling.
+				t.Fatal("got empty line")
+			}
+			if stderrPrevLine != "" && curLine == stderrPrevLine {
+				t.Fatalf("current line == previous line, expected new output:\ncprev: %s\ncur: %s\n", stderrPrevLine, curLine)
+			}
+			stderrPrevLine = curLine
+			lines++
+		case <-timeout:
+			t.Fatal("timeout reading streaming output")
+		default:
+		}
+
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	// readLines * 2 (stdout and stderr)
+	if lines != readLines*2 {
+		t.Fatalf("read %d lines from streaming output, expected 6", lines)
+	}
+
+	s := p.Status()
+	//stdout should have both stdout and stderr output
+	if len(s.Stdout) < readLines*2 {
+		t.Fatalf("read %d lines from buffered STDOUT, expected %d", len(s.Stdout), readLines)
+	}
+	//stderr should be empty
+	if len(s.Stderr) != 0 {
+		t.Fatalf("read %d lines from buffered STDERR, expected %d", len(s.Stderr), readLines)
+	}
+
+	// Stop test/stream
+	touchFile(tmpfile.Name())
+
+	s = p.Status()
+	if s.Exit != 0 {
+		t.Errorf("got exit %d, expected 0", s.Exit)
+	}
+
+	// Kill the process
+	if err := p.Stop(); err != nil {
+		t.Error(err)
+	}
+}
+
 func TestCmdOnlyStreamingOutput(t *testing.T) {
 	tmpfile, err := ioutil.TempFile("", "cmd.TestStreamingOutput")
 	if err != nil {
@@ -464,7 +577,7 @@ func TestCmdOnlyStreamingOutput(t *testing.T) {
 	//   stdout 2
 	//   stderr 2
 	// Where each is printed on stdout and stderr as indicated.
-	p := cmd.NewCmdOptions(cmd.Options{Buffered: false, Streaming: true}, "./test/stream", tmpfile.Name())
+	p := cmd.NewCmdOptions(cmd.Options{Buffered: false, BufferedCombined: false, Streaming: true}, "./test/stream", tmpfile.Name())
 	p.Start()
 	time.Sleep(250 * time.Millisecond) // give test/stream a moment to print something
 

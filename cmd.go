@@ -125,6 +125,11 @@ type Options struct {
 	// See Cmd.Status for more info.
 	Buffered bool
 
+	// If Buffered is true, STDOUT and STDERR are written to Status.Stdout ONLY.
+	// Status.StdErr will be empty. The caller can call Cmd.Status to read output at intervals.
+	// See Cmd.Status for more info.
+	BufferedCombined bool
+
 	// If Streaming is true, Cmd.Stdout and Cmd.Stderr channels are created and
 	// STDOUT and STDERR output lines are written them in real time. This is
 	// faster and more efficient than polling Cmd.Status. The caller must read both
@@ -155,6 +160,11 @@ func NewCmdOptions(options Options, name string, args ...string) *Cmd {
 		c.stderrBuf = NewOutputBuffer()
 	}
 
+	if options.BufferedCombined {
+		c.stdoutBuf = NewOutputBuffer()
+		c.stderrBuf = nil
+	}
+
 	if options.Streaming {
 		c.Stdout = make(chan string, DEFAULT_STREAM_CHAN_SIZE)
 		c.stdoutStream = NewOutputStream(c.Stdout)
@@ -173,8 +183,9 @@ func NewCmdOptions(options Options, name string, args ...string) *Cmd {
 func (c *Cmd) Clone() *Cmd {
 	clone := NewCmdOptions(
 		Options{
-			Buffered:  c.stdoutBuf != nil,
-			Streaming: c.stdoutStream != nil,
+			Buffered:         c.stdoutBuf != nil,
+			BufferedCombined: c.stdoutBuf != nil,
+			Streaming:        c.stdoutStream != nil,
 		},
 		c.Name,
 		c.Args...,
@@ -286,9 +297,12 @@ func (c *Cmd) Status() Status {
 		if !c.final {
 			if c.stdoutBuf != nil {
 				c.status.Stdout = c.stdoutBuf.Lines()
-				c.status.Stderr = c.stderrBuf.Lines()
 				c.stdoutBuf = nil // release buffers
-				c.stderrBuf = nil
+
+			}
+			if c.stderrBuf != nil {
+				c.status.Stderr = c.stderrBuf.Lines()
+				c.stderrBuf = nil // release buffers
 			}
 			c.final = true
 		}
@@ -297,6 +311,9 @@ func (c *Cmd) Status() Status {
 		c.status.Runtime = time.Now().Sub(c.startTime).Seconds()
 		if c.stdoutBuf != nil {
 			c.status.Stdout = c.stdoutBuf.Lines()
+
+		}
+		if c.stderrBuf != nil {
 			c.status.Stderr = c.stderrBuf.Lines()
 		}
 	}
@@ -333,12 +350,19 @@ func (c *Cmd) run(in io.Reader) {
 	// Set exec.Cmd.Stdout and .Stderr to our concurrent-safe stdout/stderr
 	// buffer, stream both, or neither
 	switch {
-	case c.stdoutBuf != nil && c.stdoutStream != nil: // buffer and stream
+
+	case c.stdoutBuf != nil && c.stderrBuf != nil && c.stdoutStream != nil: // buffer and stream
 		cmd.Stdout = io.MultiWriter(c.stdoutStream, c.stdoutBuf)
 		cmd.Stderr = io.MultiWriter(c.stderrStream, c.stderrBuf)
-	case c.stdoutBuf != nil: // buffer only
+	case c.stdoutBuf != nil && c.stderrBuf == nil && c.stdoutStream != nil: // combined buffer and stream
+		cmd.Stdout = io.MultiWriter(c.stdoutStream, c.stdoutBuf)
+		cmd.Stderr = io.MultiWriter(c.stderrStream, c.stdoutBuf)
+	case c.stdoutBuf != nil && c.stderrBuf != nil: // buffer only
 		cmd.Stdout = c.stdoutBuf
 		cmd.Stderr = c.stderrBuf
+	case c.stdoutBuf != nil && c.stderrBuf == nil: // buffer combining stderr into stdout
+		cmd.Stdout = c.stdoutBuf
+		cmd.Stderr = c.stdoutBuf
 	case c.stdoutStream != nil: // stream only
 		cmd.Stdout = c.stdoutStream
 		cmd.Stderr = c.stderrStream
