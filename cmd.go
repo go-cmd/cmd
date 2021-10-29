@@ -53,17 +53,21 @@ import (
 	"time"
 )
 
+// Apply ExecCmdOption before process start, used for customize SysProcAttr.
+type ExecCmdOption func(cmd *exec.Cmd)
+
 // Cmd represents an external command, similar to the Go built-in os/exec.Cmd.
 // A Cmd cannot be reused after calling Start. Exported fields are read-only and
 // should not be modified, except Env which can be set before calling Start.
 // To create a new Cmd, call NewCmd or NewCmdOptions.
 type Cmd struct {
-	Name   string
-	Args   []string
-	Env    []string
-	Dir    string
-	Stdout chan string // streaming STDOUT if enabled, else nil (see Options)
-	Stderr chan string // streaming STDERR if enabled, else nil (see Options)
+	Name    string
+	Args    []string
+	Env     []string
+	Dir     string
+	Options []ExecCmdOption
+	Stdout  chan string // streaming STDOUT if enabled, else nil (see Options)
+	Stderr  chan string // streaming STDERR if enabled, else nil (see Options)
 	*sync.Mutex
 	started      bool      // cmd.Start called, no error
 	stopped      bool      // Stop called
@@ -181,6 +185,7 @@ func (c *Cmd) Clone() *Cmd {
 	)
 	clone.Dir = c.Dir
 	clone.Env = c.Env
+	clone.Options = c.Options
 	return clone
 }
 
@@ -369,6 +374,9 @@ func (c *Cmd) run(in io.Reader) {
 	// is nil, use the current process' environment.
 	cmd.Env = c.Env
 	cmd.Dir = c.Dir
+	for _, f := range c.Options {
+		f(cmd)
+	}
 
 	// //////////////////////////////////////////////////////////////////////
 	// Start command
