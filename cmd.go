@@ -53,21 +53,37 @@ import (
 	"time"
 )
 
-// Apply ExecCmdOption before process start, used for customize SysProcAttr.
-type ExecCmdOption func(cmd *exec.Cmd)
-
 // Cmd represents an external command, similar to the Go built-in os/exec.Cmd.
 // A Cmd cannot be reused after calling Start. Exported fields are read-only and
 // should not be modified, except Env which can be set before calling Start.
 // To create a new Cmd, call NewCmd or NewCmdOptions.
 type Cmd struct {
-	Name    string
-	Args    []string
-	Env     []string
-	Dir     string
-	Options []ExecCmdOption
-	Stdout  chan string // streaming STDOUT if enabled, else nil (see Options)
-	Stderr  chan string // streaming STDERR if enabled, else nil (see Options)
+	// Name of binary (command) to run. This is the only required value.
+	// No path expansion is done.
+	// Used to set underlying os/exec.Cmd.Path.
+	Name string
+
+	// Commands line arguments passed to the command.
+	// Args are optional.
+	// Used to set underlying os/exec.Cmd.Args.
+	Args []string
+
+	// Environment variables set before running the command.
+	// Env is optional.
+	Env []string
+
+	// Current working directory from which to run the command.
+	// Dir is optional; default is current working directory
+	// of calling process.
+	// Used to set underlying os/exec.Cmd.Dir.
+	Dir string
+
+	// Stdout sets streaming STDOUT if enabled, else nil (see Options).
+	Stdout chan string
+
+	// Stderr sets streaming STDERR if enabled, else nil (see Options).
+	Stderr chan string
+
 	*sync.Mutex
 	started      bool      // cmd.Start called, no error
 	stopped      bool      // Stop called
@@ -81,9 +97,11 @@ type Cmd struct {
 	status       Status
 	statusChan   chan Status   // nil until Start() called
 	doneChan     chan struct{} // closed when done running
+	setCmdFuncs  []func(cmd *exec.Cmd)
 }
 
 var (
+	// ErrNotStarted is returned by Stop if called before Start or StartWithStdin.
 	ErrNotStarted = errors.New("command not running")
 )
 
@@ -134,14 +152,20 @@ type Options struct {
 	// faster and more efficient than polling Cmd.Status. The caller must read both
 	// streaming channels, else lines are dropped silently.
 	Streaming bool
+
+	// SetCmd is a list of callbacks to customize the underlying os/exec.Cmd.
+	// For example, use it to set SysProcAttr. All callbacks are called once,
+	// just before running the command.
+	SetCmd []func(cmd *exec.Cmd)
 }
 
 // NewCmdOptions creates a new Cmd with options. The command is not started
 // until Start is called.
 func NewCmdOptions(options Options, name string, args ...string) *Cmd {
 	c := &Cmd{
-		Name:  name,
-		Args:  args,
+		Name: name,
+		Args: args,
+		// --
 		Mutex: &sync.Mutex{},
 		status: Status{
 			Cmd:      name,
@@ -167,6 +191,16 @@ func NewCmdOptions(options Options, name string, args ...string) *Cmd {
 		c.stderrStream = NewOutputStream(c.Stderr)
 	}
 
+	if len(options.SetCmd) > 0 {
+		c.setCmdFuncs = []func(cmd *exec.Cmd){}
+		for _, f := range options.SetCmd {
+			if f == nil {
+				continue
+			}
+			c.setCmdFuncs = append(c.setCmdFuncs, f)
+		}
+	}
+
 	return c
 }
 
@@ -185,7 +219,14 @@ func (c *Cmd) Clone() *Cmd {
 	)
 	clone.Dir = c.Dir
 	clone.Env = c.Env
-	clone.Options = c.Options
+
+	if len(c.setCmdFuncs) > 0 {
+		clone.setCmdFuncs = make([]func(cmd *exec.Cmd), len(c.setCmdFuncs))
+		for i := range c.setCmdFuncs {
+			clone.setCmdFuncs[i] = c.setCmdFuncs[i]
+		}
+	}
+
 	return clone
 }
 
@@ -374,7 +415,9 @@ func (c *Cmd) run(in io.Reader) {
 	// is nil, use the current process' environment.
 	cmd.Env = c.Env
 	cmd.Dir = c.Dir
-	for _, f := range c.Options {
+
+	// Run all optional commands to customize underlying os/exe.Cmd.
+	for _, f := range c.setCmdFuncs {
 		f(cmd)
 	}
 

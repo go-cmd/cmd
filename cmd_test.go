@@ -1128,13 +1128,41 @@ func TestStdinOk(t *testing.T) {
 	}
 }
 
-func TestExecCCmdOptions(t *testing.T) {
-	p := cmd.NewCmd("/bin/ls")
+func TestOptionsSetCmd(t *testing.T) {
 	handled := false
-	p.Options = append(p.Options, func(cmd *exec.Cmd) {
-		handled = true
-	})
+	p := cmd.NewCmdOptions(
+		cmd.Options{
+			SetCmd: []func(cmd *exec.Cmd){
+				func(cmd *exec.Cmd) { handled = true },
+			},
+		},
+		"/bin/ls",
+	)
 	<-p.Start()
+	if !handled {
+		t.Error("exec cmd option not applied")
+	}
+
+	// nil funcs should be ignored, not cause a panic
+	handled = false
+	p = cmd.NewCmdOptions(
+		cmd.Options{
+			SetCmd: []func(cmd *exec.Cmd){
+				nil,
+				func(cmd *exec.Cmd) { handled = true },
+			},
+		},
+		"/bin/ls",
+	)
+	<-p.Start()
+	if !handled {
+		t.Error("exec cmd option not applied")
+	}
+
+	// Cloning should copy the funcs
+	handled = false
+	p2 := p.Clone()
+	<-p2.Start()
 	if !handled {
 		t.Error("exec cmd option not applied")
 	}
