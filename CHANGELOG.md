@@ -2,6 +2,12 @@
 
 ## v1.3
 
+### v1.3.1 (2021-10-13)
+
+* Fixed `Stop()` on Windows with go1.17 (PR #69) (@silisium)
+* Updated matrix to go1.15, go1.16, and go1.17
+* Added SECURITY.md and GitHub code analysis 
+
 ### v1.3.0 (2020-10-31)
 
 * Fixed last line not flushed if incomplete (PR #48) (@greut)

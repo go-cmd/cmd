@@ -1243,3 +1243,15 @@ func TestStdinOk(t *testing.T) {
 		}
 	}
 }
+
+func TestExecCCmdOptions(t *testing.T) {
+	p := cmd.NewCmd("/bin/ls")
+	handled := false
+	p.Options = append(p.Options, func(cmd *exec.Cmd) {
+		handled = true
+	})
+	<-p.Start()
+	if !handled {
+		t.Error("exec cmd option not applied")
+	}
+}
