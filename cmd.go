@@ -129,7 +129,7 @@ type Options struct {
 	// See Cmd.Status for more info.
 	Buffered bool
 
-	// If Buffered is true, STDOUT and STDERR are written to Status.Stdout ONLY.
+	// If BufferedCombined is true, STDOUT and STDERR are written to Status.Stdout ONLY similar to 2>&1.
 	// Status.StdErr will be empty. The caller can call Cmd.Status to read output at intervals.
 	// See Cmd.Status for more info.
 	BufferedCombined bool
