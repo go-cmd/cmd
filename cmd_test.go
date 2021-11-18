@@ -271,6 +271,7 @@ func TestCmdNotFound(t *testing.T) {
 		Stdout:   nil,
 		Stderr:   nil,
 	}
+	t.Logf("%v", gotStatus)
 	if diffs := deep.Equal(gotStatus, expectStatus); diffs != nil {
 		t.Logf("%+v", gotStatus)
 		t.Error(diffs)
@@ -438,6 +439,8 @@ func TestCmdBothOutput(t *testing.T) {
 }
 
 func TestCmdBufferedCombinedOutput(t *testing.T) {
+	//This tests the buffered combined
+
 	tmpfile, err := ioutil.TempFile("", "cmd.TestBuffCombdgOutput")
 	if err != nil {
 		t.Fatal(err)
@@ -464,7 +467,7 @@ func TestCmdBufferedCombinedOutput(t *testing.T) {
 	//   stdout 2
 	//   stderr 2
 	// Where each is printed on stdout and stderr as indicated.
-	p := cmd.NewCmdOptions(cmd.Options{Buffered: true, BufferedCombined: true, Streaming: true}, "./test/stream", tmpfile.Name())
+	p := cmd.NewCmdOptions(cmd.Options{Buffered: false, BufferedCombined: true, Streaming: true}, "./test/stream", tmpfile.Name())
 	p.Start()
 	time.Sleep(250 * time.Millisecond) // give test/stream a moment to print something
 
