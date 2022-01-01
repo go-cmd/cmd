@@ -2,9 +2,9 @@
 
 ## v1.4
 
-### v1.4.0
+### v1.4.0 (2022-01-01)
 
-* Added `Options.SetCmd` based on PR #53 #54 by @wenerme
+* Added `Options.BeforeExec` based on PR #53 #54 by @wenerme (issue #53)
 
 ## v1.3
 

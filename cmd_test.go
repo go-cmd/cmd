@@ -1,3 +1,4 @@
+//go:build !windows
 // +build !windows
 
 package cmd_test
@@ -1128,11 +1129,11 @@ func TestStdinOk(t *testing.T) {
 	}
 }
 
-func TestOptionsSetCmd(t *testing.T) {
+func TestOptionsBeforeExec(t *testing.T) {
 	handled := false
 	p := cmd.NewCmdOptions(
 		cmd.Options{
-			SetCmd: []func(cmd *exec.Cmd){
+			BeforeExec: []func(cmd *exec.Cmd){
 				func(cmd *exec.Cmd) { handled = true },
 			},
 		},
@@ -1147,7 +1148,7 @@ func TestOptionsSetCmd(t *testing.T) {
 	handled = false
 	p = cmd.NewCmdOptions(
 		cmd.Options{
-			SetCmd: []func(cmd *exec.Cmd){
+			BeforeExec: []func(cmd *exec.Cmd){
 				nil,
 				func(cmd *exec.Cmd) { handled = true },
 			},

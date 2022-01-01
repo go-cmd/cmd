@@ -85,19 +85,19 @@ type Cmd struct {
 	Stderr chan string
 
 	*sync.Mutex
-	started      bool      // cmd.Start called, no error
-	stopped      bool      // Stop called
-	done         bool      // run() done
-	final        bool      // status finalized in Status
-	startTime    time.Time // if started true
-	stdoutBuf    *OutputBuffer
-	stderrBuf    *OutputBuffer
-	stdoutStream *OutputStream
-	stderrStream *OutputStream
-	status       Status
-	statusChan   chan Status   // nil until Start() called
-	doneChan     chan struct{} // closed when done running
-	setCmdFuncs  []func(cmd *exec.Cmd)
+	started         bool      // cmd.Start called, no error
+	stopped         bool      // Stop called
+	done            bool      // run() done
+	final           bool      // status finalized in Status
+	startTime       time.Time // if started true
+	stdoutBuf       *OutputBuffer
+	stderrBuf       *OutputBuffer
+	stdoutStream    *OutputStream
+	stderrStream    *OutputStream
+	status          Status
+	statusChan      chan Status   // nil until Start() called
+	doneChan        chan struct{} // closed when done running
+	beforeExecFuncs []func(cmd *exec.Cmd)
 }
 
 var (
@@ -153,10 +153,10 @@ type Options struct {
 	// streaming channels, else lines are dropped silently.
 	Streaming bool
 
-	// SetCmd is a list of callbacks to customize the underlying os/exec.Cmd.
-	// For example, use it to set SysProcAttr. All callbacks are called once,
-	// just before running the command.
-	SetCmd []func(cmd *exec.Cmd)
+	// BeforeExec is a list of functions called immediately before starting
+	// the real command. These functions can be used to customize the underlying
+	// os/exec.Cmd. For example, to set SysProcAttr.
+	BeforeExec []func(cmd *exec.Cmd)
 }
 
 // NewCmdOptions creates a new Cmd with options. The command is not started
@@ -191,13 +191,13 @@ func NewCmdOptions(options Options, name string, args ...string) *Cmd {
 		c.stderrStream = NewOutputStream(c.Stderr)
 	}
 
-	if len(options.SetCmd) > 0 {
-		c.setCmdFuncs = []func(cmd *exec.Cmd){}
-		for _, f := range options.SetCmd {
+	if len(options.BeforeExec) > 0 {
+		c.beforeExecFuncs = []func(cmd *exec.Cmd){}
+		for _, f := range options.BeforeExec {
 			if f == nil {
 				continue
 			}
-			c.setCmdFuncs = append(c.setCmdFuncs, f)
+			c.beforeExecFuncs = append(c.beforeExecFuncs, f)
 		}
 	}
 
@@ -220,10 +220,10 @@ func (c *Cmd) Clone() *Cmd {
 	clone.Dir = c.Dir
 	clone.Env = c.Env
 
-	if len(c.setCmdFuncs) > 0 {
-		clone.setCmdFuncs = make([]func(cmd *exec.Cmd), len(c.setCmdFuncs))
-		for i := range c.setCmdFuncs {
-			clone.setCmdFuncs[i] = c.setCmdFuncs[i]
+	if len(c.beforeExecFuncs) > 0 {
+		clone.beforeExecFuncs = make([]func(cmd *exec.Cmd), len(c.beforeExecFuncs))
+		for i := range c.beforeExecFuncs {
+			clone.beforeExecFuncs[i] = c.beforeExecFuncs[i]
 		}
 	}
 
@@ -417,7 +417,7 @@ func (c *Cmd) run(in io.Reader) {
 	cmd.Dir = c.Dir
 
 	// Run all optional commands to customize underlying os/exe.Cmd.
-	for _, f := range c.setCmdFuncs {
+	for _, f := range c.beforeExecFuncs {
 		f(cmd)
 	}
 
