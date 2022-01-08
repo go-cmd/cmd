@@ -1,4 +1,4 @@
-// +build !windows
+//go:build !windows
 
 package cmd_test
 
@@ -1125,5 +1125,45 @@ func TestStdinOk(t *testing.T) {
 		if gotStatus.Runtime < 0 {
 			t.Errorf("got runtime %f, expected non-zero", gotStatus.Runtime)
 		}
+	}
+}
+
+func TestOptionsBeforeExec(t *testing.T) {
+	handled := false
+	p := cmd.NewCmdOptions(
+		cmd.Options{
+			BeforeExec: []func(cmd *exec.Cmd){
+				func(cmd *exec.Cmd) { handled = true },
+			},
+		},
+		"/bin/ls",
+	)
+	<-p.Start()
+	if !handled {
+		t.Error("exec cmd option not applied")
+	}
+
+	// nil funcs should be ignored, not cause a panic
+	handled = false
+	p = cmd.NewCmdOptions(
+		cmd.Options{
+			BeforeExec: []func(cmd *exec.Cmd){
+				nil,
+				func(cmd *exec.Cmd) { handled = true },
+			},
+		},
+		"/bin/ls",
+	)
+	<-p.Start()
+	if !handled {
+		t.Error("exec cmd option not applied")
+	}
+
+	// Cloning should copy the funcs
+	handled = false
+	p2 := p.Clone()
+	<-p2.Start()
+	if !handled {
+		t.Error("exec cmd option not applied")
 	}
 }

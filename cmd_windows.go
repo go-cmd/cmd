@@ -11,7 +11,10 @@ import (
 // Stop is called immediately after the command ends but before Start can
 // update its internal state.
 func terminateProcess(pid int) error {
-	p := &os.Process{Pid: pid}
+	p, err := os.FindProcess(pid)
+	if err != nil {
+		return err
+	}
 	return p.Kill()
 }
 

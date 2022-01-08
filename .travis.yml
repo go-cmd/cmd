@@ -6,12 +6,13 @@ os:
   - windows
 
 go:
-  - "1.13"
-  - "1.14"
+  - "1.15"
+  - "1.16"
+  - "1.17"
 
 before_install:
   - go get github.com/mattn/goveralls
   - go mod vendor
 
 script:
-  - $GOPATH/bin/goveralls -service=travis-ci -race -show -package github.com/go-cmd/cmd
+  - $GOPATH/bin/goveralls -service=travis-pro -race -show -package github.com/go-cmd/cmd

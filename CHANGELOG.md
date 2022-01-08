@@ -1,6 +1,18 @@
 # go-cmd/cmd Changelog
 
+## v1.4
+
+### v1.4.0 (2022-01-01)
+
+* Added `Options.BeforeExec` based on PR #53 #54 by @wenerme (issue #53)
+
 ## v1.3
+
+### v1.3.1 (2021-10-13)
+
+* Fixed `Stop()` on Windows with go1.17 (PR #69) (@silisium)
+* Updated matrix to go1.15, go1.16, and go1.17
+* Added SECURITY.md and GitHub code analysis 
 
 ### v1.3.0 (2020-10-31)
 
