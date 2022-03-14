@@ -162,7 +162,7 @@ type Options struct {
 	// value DEFAULT_LINE_BUFFER_SIZE is usually sufficient, but if
 	// ErrLineBufferOverflow errors occur, try increasing the size with this
 	// field.
-	LineBufferSize int
+	LineBufferSize uint
 }
 
 // NewCmdOptions creates a new Cmd with options. The command is not started
@@ -196,11 +196,11 @@ func NewCmdOptions(options Options, name string, args ...string) *Cmd {
 	if options.Streaming {
 		c.Stdout = make(chan string, DEFAULT_STREAM_CHAN_SIZE)
 		c.stdoutStream = NewOutputStream(c.Stdout)
-		c.stdoutStream.SetLineBufferSize(options.LineBufferSize)
+		c.stdoutStream.SetLineBufferSize(int(options.LineBufferSize))
 
 		c.Stderr = make(chan string, DEFAULT_STREAM_CHAN_SIZE)
 		c.stderrStream = NewOutputStream(c.Stderr)
-		c.stderrStream.SetLineBufferSize(options.LineBufferSize)
+		c.stderrStream.SetLineBufferSize(int(options.LineBufferSize))
 	}
 
 	if len(options.BeforeExec) > 0 {
