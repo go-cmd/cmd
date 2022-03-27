@@ -157,6 +157,12 @@ type Options struct {
 	// the real command. These functions can be used to customize the underlying
 	// os/exec.Cmd. For example, to set SysProcAttr.
 	BeforeExec []func(cmd *exec.Cmd)
+
+	// LineBufferSize sets the size of the OutputStream line buffer. The default
+	// value DEFAULT_LINE_BUFFER_SIZE is usually sufficient, but if
+	// ErrLineBufferOverflow errors occur, try increasing the size with this
+	// field.
+	LineBufferSize uint
 }
 
 // NewCmdOptions creates a new Cmd with options. The command is not started
@@ -178,6 +184,10 @@ func NewCmdOptions(options Options, name string, args ...string) *Cmd {
 		doneChan: make(chan struct{}),
 	}
 
+	if options.LineBufferSize == 0 {
+		options.LineBufferSize = DEFAULT_LINE_BUFFER_SIZE
+	}
+
 	if options.Buffered {
 		c.stdoutBuf = NewOutputBuffer()
 		c.stderrBuf = NewOutputBuffer()
@@ -186,9 +196,11 @@ func NewCmdOptions(options Options, name string, args ...string) *Cmd {
 	if options.Streaming {
 		c.Stdout = make(chan string, DEFAULT_STREAM_CHAN_SIZE)
 		c.stdoutStream = NewOutputStream(c.Stdout)
+		c.stdoutStream.SetLineBufferSize(int(options.LineBufferSize))
 
 		c.Stderr = make(chan string, DEFAULT_STREAM_CHAN_SIZE)
 		c.stderrStream = NewOutputStream(c.Stderr)
+		c.stderrStream.SetLineBufferSize(int(options.LineBufferSize))
 	}
 
 	if len(options.BeforeExec) > 0 {
