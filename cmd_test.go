@@ -1,4 +1,4 @@
-// +build !windows
+//go:build !windows
 
 package cmd_test
 
@@ -1244,14 +1244,102 @@ func TestStdinOk(t *testing.T) {
 	}
 }
 
-func TestExecCCmdOptions(t *testing.T) {
-	p := cmd.NewCmd("/bin/ls")
+func TestOptionsBeforeExec(t *testing.T) {
 	handled := false
-	p.Options = append(p.Options, func(cmd *exec.Cmd) {
-		handled = true
-	})
+	p := cmd.NewCmdOptions(
+		cmd.Options{
+			BeforeExec: []func(cmd *exec.Cmd){
+				func(cmd *exec.Cmd) { handled = true },
+			},
+		},
+		"/bin/ls",
+	)
 	<-p.Start()
 	if !handled {
 		t.Error("exec cmd option not applied")
 	}
+
+	// nil funcs should be ignored, not cause a panic
+	handled = false
+	p = cmd.NewCmdOptions(
+		cmd.Options{
+			BeforeExec: []func(cmd *exec.Cmd){
+				nil,
+				func(cmd *exec.Cmd) { handled = true },
+			},
+		},
+		"/bin/ls",
+	)
+	<-p.Start()
+	if !handled {
+		t.Error("exec cmd option not applied")
+	}
+
+	// Cloning should copy the funcs
+	handled = false
+	p2 := p.Clone()
+	<-p2.Start()
+	if !handled {
+		t.Error("exec cmd option not applied")
+	}
+}
+
+func TestCmdLineBufferIncrease(t *testing.T) {
+	lineContent := cmd.DEFAULT_LINE_BUFFER_SIZE * 2
+	longLine := make([]byte, lineContent) // "AAA..."
+	for i := 0; i < lineContent; i++ {
+		longLine[i] = 'A'
+	}
+
+	tmpfile, err := ioutil.TempFile("", "cmd.TestCmdLineBufferIncrease")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		os.Remove(tmpfile.Name())
+	})
+	if _, err := tmpfile.Write(longLine); err != nil {
+		t.Fatal(err)
+	}
+	if err := tmpfile.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	timeout := time.After(10 * time.Second) // test timeout
+
+	catStdout := cmd.NewCmdOptions(cmd.Options{
+		Streaming:      true,
+		LineBufferSize: cmd.DEFAULT_LINE_BUFFER_SIZE * 2,
+	}, "./test/cat", tmpfile.Name(), "1")
+
+	catStdoutStatus := catStdout.Start()
+
+	select {
+	case curLine := <-catStdout.Stdout:
+		t.Logf("got stdout bytes: %d", len(curLine))
+		if len(curLine) <= cmd.DEFAULT_LINE_BUFFER_SIZE {
+			t.Error("Unable to read more than default line buffer from stdout")
+		}
+	case <-timeout:
+		t.Fatal("timeout reading streaming output")
+	}
+	<-catStdoutStatus
+
+	catStderr := cmd.NewCmdOptions(cmd.Options{
+		Streaming:      true,
+		LineBufferSize: cmd.DEFAULT_LINE_BUFFER_SIZE * 2,
+	}, "./test/cat", tmpfile.Name(), "2")
+
+	catStderrStatus := catStderr.Start()
+
+	select {
+	case curLine := <-catStderr.Stderr:
+		t.Logf("got stderr bytes: %d", len(curLine))
+		if len(curLine) <= cmd.DEFAULT_LINE_BUFFER_SIZE {
+			t.Error("Unable to read more than default line buffer from stderr")
+		}
+	case <-timeout:
+		t.Fatal("timeout reading streaming output")
+	}
+	<-catStderrStatus
 }

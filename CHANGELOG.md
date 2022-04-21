@@ -1,5 +1,15 @@
 # go-cmd/cmd Changelog
 
+## v1.4
+
+### v1.4.1 (2022-03-27)
+
+* Added `Options.LineBufferSize` based on PR #85 by @Crevil (issue #66)
+
+### v1.4.0 (2022-01-01)
+
+* Added `Options.BeforeExec` based on PR #53 #54 by @wenerme (issue #53)
+
 ## v1.3
 
 ### v1.3.1 (2021-10-13)
