@@ -5,11 +5,8 @@ import (
 	"syscall"
 )
 
-func terminateProcess(pid int) error {
-	// Signal the process group (-pid), not just the process, so that the process
-	// and all its children are signaled. Else, child procs can keep running and
-	// keep the stdout/stderr fd open and cause cmd.Wait to hang.
-	return syscall.Kill(-pid, syscall.SIGTERM)
+func signalProcess(pid int, sig syscall.Signal) error {
+	return syscall.Kill(pid, sig)
 }
 
 func setProcessGroupID(cmd *exec.Cmd) {

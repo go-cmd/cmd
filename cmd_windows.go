@@ -6,16 +6,14 @@ import (
 	"syscall"
 )
 
-// Stop stops the command by sending its process group a SIGTERM signal.
-// Stop is idempotent. An error should only be returned in the rare case that
-// Stop is called immediately after the command ends but before Start can
-// update its internal state.
-func terminateProcess(pid int) error {
+// Send the given signal to the process, returns an error if the process isn't
+// running.
+func signalProcess(pid int, sig syscall.Signal) error {
 	p, err := os.FindProcess(pid)
 	if err != nil {
 		return err
 	}
-	return p.Kill()
+	return p.Signal(sig)
 }
 
 func setProcessGroupID(cmd *exec.Cmd) {

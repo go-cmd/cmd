@@ -275,15 +275,16 @@ func (c *Cmd) StartWithStdin(in io.Reader) <-chan Status {
 	return c.statusChan
 }
 
-// Stop stops the command by sending its process group a SIGTERM signal.
-// Stop is idempotent. Stopping and already stopped command returns nil.
-//
-// Stop returns ErrNotStarted if called before Start or StartWithStdin. If the
-// command is very slow to start, Stop can return ErrNotStarted after calling
-// Start or StartWithStdin because this package is still waiting for the system
-// to start the process. All other return errors are from the low-level system
-// function for process termination.
-func (c *Cmd) Stop() error {
+// SendSignal sends the given signal to its process group if group is true,
+// else the signal is just sent to the parent process.
+// SendSignal returns ErrNotStarted if called before Start or StartWithStdin.
+// If the command is very slow to start, SendSignal can return ErrNotStarted
+// after calling Start or StartWithStdin because this package is still waiting
+// for the system to start the process. All other return errors are from the
+// low-level system function for process termination.
+// Not all signals are supported on all operating systems, refer to os/Signal
+// for details.
+func (c *Cmd) SendSignal(sig syscall.Signal, group bool) error {
 	c.Lock()
 	defer c.Unlock()
 
@@ -303,6 +304,23 @@ func (c *Cmd) Stop() error {
 		return nil
 	}
 
+	pid := c.status.PID
+	if group {
+		pid *= -1
+	}
+
+	return signalProcess(pid, sig)
+}
+
+// Stop stops the command by sending its process group a SIGTERM signal.
+// Stop is idempotent. Stopping and already stopped command returns nil.
+//
+// Stop returns ErrNotStarted if called before Start or StartWithStdin. If the
+// command is very slow to start, Stop can return ErrNotStarted after calling
+// Start or StartWithStdin because this package is still waiting for the system
+// to start the process. All other return errors are from the low-level system
+// function for process termination.
+func (c *Cmd) Stop() error {
 	// Flag that command was stopped, it didn't complete. This results in
 	// status.Complete = false
 	c.stopped = true
@@ -310,7 +328,7 @@ func (c *Cmd) Stop() error {
 	// Signal the process group (-pid), not just the process, so that the process
 	// and all its children are signaled. Else, child procs can keep running and
 	// keep the stdout/stderr fd open and cause cmd.Wait to hang.
-	return terminateProcess(c.status.PID)
+	return c.SendSignal(syscall.SIGTERM, true)
 }
 
 // Status returns the Status of the command at any time. It is safe to call
