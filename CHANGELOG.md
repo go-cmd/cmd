@@ -2,6 +2,10 @@
 
 ## v1.4
 
+### v1.4.2 (2023-07-08)
+
+* Added `Options.CombinedOutput` based on PR #76 by @jwomackgsa (issue #70)
+
 ### v1.4.1 (2022-03-27)
 
 * Added `Options.LineBufferSize` based on PR #85 by @Crevil (issue #66)

@@ -147,16 +147,17 @@ type Options struct {
 	// See Cmd.Status for more info.
 	Buffered bool
 
-	// If CombinedOutput is true, STDOUT and STDERR are written to Status.Stdout ONLY similar to 2>&1.
-	// If CombinedOutput is used at the same time as Buffered, CombinedOutput will take preference.
-	// Status.StdErr will be empty. The caller can call Cmd.Status to read output at intervals.
-	// See Cmd.Status for more info.
+	// If CombinedOutput is true, STDOUT and STDERR are written only to Status.Stdout
+	// (similar to 2>&1 on Linux), and Status.StdErr will be empty. If CombinedOutput
+	// is used Buffered, CombinedOutput takes preference. CombinedOutput does not work
+	// with Streaming.
 	CombinedOutput bool
 
 	// If Streaming is true, Cmd.Stdout and Cmd.Stderr channels are created and
 	// STDOUT and STDERR output lines are written them in real time. This is
 	// faster and more efficient than polling Cmd.Status. The caller must read both
-	// streaming channels, else lines are dropped silently.
+	// streaming channels, else lines are dropped silently. Streaming does not work
+	// with CombinedOutput.
 	Streaming bool
 
 	// BeforeExec is a list of functions called immediately before starting
@@ -166,8 +167,7 @@ type Options struct {
 
 	// LineBufferSize sets the size of the OutputStream line buffer. The default
 	// value DEFAULT_LINE_BUFFER_SIZE is usually sufficient, but if
-	// ErrLineBufferOverflow errors occur, try increasing the size with this
-	// field.
+	// ErrLineBufferOverflow errors occur, try increasing the size with this field.
 	LineBufferSize uint
 }
 
@@ -227,10 +227,9 @@ func NewCmdOptions(options Options, name string, args ...string) *Cmd {
 	return c
 }
 
-// Clone clones a Cmd. All the options are transferred,
-// but the internal state of the original object is lost.
-// Cmd is one-use only, so if you need to re-start a Cmd,
-// you need to Clone it.
+// Clone clones a Cmd. All the options are transferred, but the internal state
+// of the original object is lost. Cmd is one-use only, so if you need to restart
+// a Cmd, you need to Clone it.
 func (c *Cmd) Clone() *Cmd {
 	clone := NewCmdOptions(
 		Options{
@@ -340,8 +339,7 @@ func (c *Cmd) Stop() error {
 // consider using streaming output. When the command finishes, buffered output
 // is complete and final.
 //
-// Status.Runtime is updated while the command is running and final when it
-// finishes.
+// Status.Runtime is updated while the command runs and is final when it finishes.
 func (c *Cmd) Status() Status {
 	c.Lock()
 	defer c.Unlock()
