@@ -1,11 +1,9 @@
 # go-cmd/Cmd
 
-[![Go Report Card][goreport-img]][goreport-url]
-[![Build status][build-img]][build-url]
-[![Coverage report][cover-img]][cover-url]
-[![GoDoc][godoc-img]][godoc-url]
+[![Go Report Card](https://goreportcard.com/badge/github.com/go-cmd/cmd)](https://goreportcard.com/report/github.com/go-cmd/cmd)[![Coverage Status](https://coveralls.io/repos/github/go-cmd/cmd/badge.svg?branch=master)](https://coveralls.io/github/go-cmd/cmd?branch=master)
+[![Go Reference](https://pkg.go.dev/badge/github.com/go-cmd/cmd/.svg)](https://pkg.go.dev/github.com/go-cmd/cmd/)
 
-This package is a small but very useful wrapper around [os/exec.Cmd](https://golang.org/pkg/os/exec/#Cmd) that makes it safe and simple to run external commands in highly concurrent, asynchronous, real-time applications. It works on Linux, macOS, and Windows. Here's the basic usage:
+This package is a small but very useful wrapper around [os/exec.Cmd](https://pkg.go.dev/os/exec#Cmd) that makes it safe and simple to run external commands in highly concurrent, asynchronous, real-time applications. It works on Linux, macOS, and Windows. Here's the basic usage:
 
 ```go
 import (
@@ -114,12 +112,3 @@ In addition to 100% test coverage and no race conditions, this package is active
 ## License
 
 [MIT](LICENSE) © go-Cmd.
-
-[goreport-img]: https://goreportcard.com/badge/github.com/go-cmd/cmd
-[goreport-url]: https://goreportcard.com/report/github.com/go-cmd/cmd
-[build-img]: https://app.travis-ci.com/go-cmd/cmd.svg?branch=master
-[build-url]: https://app.travis-ci.com/go-cmd/cmd
-[cover-img]: https://coveralls.io/repos/github/go-cmd/cmd/badge.svg
-[cover-url]: https://coveralls.io/github/go-cmd/cmd
-[godoc-img]: https://godoc.org/github.com/go-cmd/cmd?status.svg
-[godoc-url]: https://pkg.go.dev/github.com/go-cmd/cmd?tab=doc
