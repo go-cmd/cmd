@@ -1,6 +1,6 @@
 # go-cmd/Cmd
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/go-cmd/cmd)](https://goreportcard.com/report/github.com/go-cmd/cmd)[![Coverage Status](https://coveralls.io/repos/github/go-cmd/cmd/badge.svg?branch=master)](https://coveralls.io/github/go-cmd/cmd?branch=master)
+[![Go Report Card](https://goreportcard.com/badge/github.com/go-cmd/cmd)](https://goreportcard.com/report/github.com/go-cmd/cmd) [![Coverage Status](https://coveralls.io/repos/github/go-cmd/cmd/badge.svg?branch=master)](https://coveralls.io/github/go-cmd/cmd?branch=master)
 [![Go Reference](https://pkg.go.dev/badge/github.com/go-cmd/cmd/.svg)](https://pkg.go.dev/github.com/go-cmd/cmd/)
 
 This package is a small but very useful wrapper around [os/exec.Cmd](https://pkg.go.dev/os/exec#Cmd) that makes it safe and simple to run external commands in highly concurrent, asynchronous, real-time applications. It works on Linux, macOS, and Windows. Here's the basic usage:
@@ -69,7 +69,9 @@ To achieve similar with `os/exec.Cmd` requires everything this package already d
 
 ### Real-time stdout and stderr
 
-It's common to want to read stdout or stderr _while_ the command is running. The common approach is to call [StdoutPipe](https://golang.org/pkg/os/exec/#Cmd.StdoutPipe) and read from the provided `io.ReadCloser`. This works but it's wrong because it causes a race condition (that `go test -race` detects) and the docs say it's wrong: "it is incorrect to call Wait before all reads from the pipe have completed. [...] it is incorrect to call Run when using StdoutPipe".
+It's common to want to read stdout or stderr _while_ the command is running. The common approach is to call [StdoutPipe](https://pkg.go.dev/os/exec#Cmd.StdoutPipe) and read from the provided `io.ReadCloser`. This works but it's wrong because it causes a race condition (that `go test -race` detects) and the docs say it's wrong:
+
+> It is thus incorrect to call Wait before all reads from the pipe have completed. For the same reason, it is incorrect to call Run when using StdoutPipe.
 
 The proper solution is to set the `io.Writer` of `Stdout`. To be thread-safe and non-racey, this requires further work to write while possibly N-many goroutines read. `go-cmd/Cmd` has done this work.
 
@@ -95,7 +97,7 @@ Speaking of that struct above, Go built-in `Cmd` does not put all the return inf
 
 ### Proper process termination
 
-[os/exec/Cmd.Wait](https://golang.org/pkg/os/exec/#Cmd.Wait) can block even after the command is killed. That can be surprising and cause problems. But `go-cmd/Cmd.Stop` reliably terminates the command, no surprises. The issue has to do with process group IDs. It's common to kill the command PID, but usually one needs to kill its process group ID instead. `go-cmd/Cmd.Stop` implements the necessary low-level magic to make this happen.
+[os/exec/Cmd.Wait](https://pkg.go.dev/os/exec#Cmd.Wait) can block even after the command is killed. That can be surprising and cause problems. But `go-cmd/Cmd.Stop` reliably terminates the command, no surprises. The issue has to do with process group IDs. It's common to kill the command PID, but usually one needs to kill its process group ID instead. `go-cmd/Cmd.Stop` implements the necessary low-level magic to make this happen.
 
 ### 100% test coverage, no race conditions
 
