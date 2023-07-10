@@ -7,7 +7,7 @@ import (
 )
 
 func TestTerminateProcess(t *testing.T) {
-	err := terminateProcess(123)
+	err := signalProcess(123, syscall.SIGTERM)
 	if err == nil {
 		t.Error("no error, expected one on terminating nonexisting PID")
 	}
