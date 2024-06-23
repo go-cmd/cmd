@@ -2,6 +2,12 @@
 
 ## v1.4
 
+### v1.4.3 (2024-06-23)
+
+* Fixed issue 94: Command is still executed if Stop() is called during BeforeExec hooks
+* Added a note in docs about SIGINT (issue #100)
+* Updated test matrix to go1.22, go1.21, and go1.20
+
 ### v1.4.2 (2023-07-08)
 
 * Added `Options.CombinedOutput` based on PR #76 by @jwomackgsa (issue #70)
@@ -19,7 +25,7 @@
 ### v1.3.1 (2021-10-13)
 
 * Fixed `Stop()` on Windows with go1.17 (PR #69) (@silisium)
-* Updated matrix to go1.15, go1.16, and go1.17
+* Updated test matrix to go1.15, go1.16, and go1.17
 * Added SECURITY.md and GitHub code analysis 
 
 ### v1.3.0 (2020-10-31)
