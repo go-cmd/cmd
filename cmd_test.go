@@ -1369,6 +1369,57 @@ func TestOptionsBeforeExec(t *testing.T) {
 	}
 }
 
+func TestOptionsBeforeExecButStopped(t *testing.T) {
+	// https://github.com/go-cmd/cmd/issues/94
+	// Bug: if cmd is stopped before BeforeExec completes, cmd still runs.
+	// To test, call Stop before BeforeExec callbacks are done and make sure
+	// the cmd is not run.
+	called := make(chan bool)
+	p := cmd.NewCmdOptions(
+		cmd.Options{
+			CombinedOutput: true,
+			BeforeExec: []func(cmd *exec.Cmd){
+				func(cmd *exec.Cmd) {
+					called <- true // let test call Stop
+					<-called       // wait for that ^
+				},
+			},
+		},
+		"/bin/ls",
+	)
+	statusChan := p.Start()
+	select {
+	case <-called:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for BeforeExec func")
+	}
+
+	err := p.Stop()
+	if err != cmd.ErrNotStarted {
+		t.Errorf("got err %v, expected cmd.ErrNotStarted", err)
+	}
+	close(called) // unblock BeforeExec func
+
+	var got cmd.Status
+	select {
+	case got = <-statusChan:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for cmd to return")
+	}
+
+	t.Logf("%+v\n", got)
+	if len(got.Stdout) != 0 {
+		t.Errorf("cmd ran, expected no output: %v", got.Stdout)
+	}
+
+	// Double checking that 2nd Stop returns nil because Stop docs
+	// say "stopping an already stopped command returns nil".
+	err = p.Stop()
+	if err != nil {
+		t.Errorf("got err %v, expected nil", err)
+	}
+}
+
 func TestCmdLineBufferIncrease(t *testing.T) {
 	lineContent := cmd.DEFAULT_LINE_BUFFER_SIZE * 2
 	longLine := make([]byte, lineContent) // "AAA..."

@@ -167,7 +167,10 @@ type Options struct {
 
 	// BeforeExec is a list of functions called immediately before starting
 	// the real command. These functions can be used to customize the underlying
-	// os/exec.Cmd. For example, to set SysProcAttr.
+	// os/exec.Cmd. For example, to set SysProcAttr. If Stop is called while
+	// executing these functions, Start (or StartWithStdin) returns after the
+	// currently executing function returns. Stop does not stop these functions,
+	// but a future version will pass a context for cancellation.
 	BeforeExec []func(cmd *exec.Cmd)
 
 	// LineBufferSize sets the size of the OutputStream line buffer. The default
@@ -285,8 +288,8 @@ func (c *Cmd) StartWithStdin(in io.Reader) <-chan Status {
 	if c.statusChan != nil {
 		return c.statusChan
 	}
-
 	c.statusChan = make(chan Status, 1)
+
 	go c.run(in)
 	return c.statusChan
 }
@@ -294,14 +297,31 @@ func (c *Cmd) StartWithStdin(in io.Reader) <-chan Status {
 // Stop stops the command by sending its process group a SIGTERM signal.
 // Stop is idempotent. Stopping and already stopped command returns nil.
 //
-// Stop returns ErrNotStarted if called before Start or StartWithStdin. If the
-// command is very slow to start, Stop can return ErrNotStarted after calling
-// Start or StartWithStdin because this package is still waiting for the system
-// to start the process. All other return errors are from the low-level system
-// function for process termination.
+// Stop returns ErrNotStarted if:
+//  1. Start (or StartWithStdin) was not called yet, or
+//  2. Start was called but Stop was called before starting the command, or
+//  3. Start was called but the system is still starting the command
+//
+// The second case can happen if Stop is called while executing Options.BeforeExec
+// functions. In this case, Status.Exit = -1 and other Status fields are zero values.
+// The third case is a race condition that might be fixed in future versions of
+// this package. It means you should not rely on Stop immediately after calling Start;
+// instead, call Start and wait for Status.PID to be set, which signals that the system
+// has completely started the command.
+//
+// All other return errors are from the low-level system function for process termination.
 func (c *Cmd) Stop() error {
 	c.Lock()
 	defer c.Unlock()
+
+	// Flag that command was stopped, it didn't complete. This results in
+	// status.Complete = false. If beforeExecFuncs are executing (Cmd hasn't
+	// started yet), run will return after the current func returns (fixes
+	// bug https://github.com/go-cmd/cmd/issues/94).
+	if c.stopped {
+		return nil
+	}
+	c.stopped = true
 
 	// c.statusChan is created in StartWithStdin()/Start(), so if nil the caller
 	// hasn't started the command yet. c.started is set true in run() only after
@@ -318,10 +338,6 @@ func (c *Cmd) Stop() error {
 	if c.done {
 		return nil
 	}
-
-	// Flag that command was stopped, it didn't complete. This results in
-	// status.Complete = false
-	c.stopped = true
 
 	// Signal the process group (-pid), not just the process, so that the process
 	// and all its children are signaled. Else, child procs can keep running and
@@ -412,7 +428,6 @@ func (c *Cmd) run(in io.Reader) {
 	// Set exec.Cmd.Stdout and .Stderr to our concurrent-safe stdout/stderr
 	// buffer, stream both, or neither
 	switch {
-
 	case c.stdoutBuf != nil && c.stderrBuf != nil && c.stdoutStream != nil: // buffer and stream
 		cmd.Stdout = io.MultiWriter(c.stdoutStream, c.stdoutBuf)
 		cmd.Stderr = io.MultiWriter(c.stderrStream, c.stderrBuf)
@@ -459,6 +474,15 @@ func (c *Cmd) run(in io.Reader) {
 	// Run all optional commands to customize underlying os/exe.Cmd.
 	for _, f := range c.beforeExecFuncs {
 		f(cmd)
+
+		// Return early if Stop called
+		// https://github.com/go-cmd/cmd/issues/94
+		c.Lock()
+		stopped := c.stopped
+		c.Unlock()
+		if stopped {
+			return
+		}
 	}
 
 	// //////////////////////////////////////////////////////////////////////
