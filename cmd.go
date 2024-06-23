@@ -120,6 +120,11 @@ var (
 // but was terminated unexpectedly (probably signaled). In either case, the
 // command failed. Callers should check Error first. If nil, then check Exit and
 // Complete.
+//
+// Note that SIGINT (interrupt) does not terminate a program. If caught and the
+// program exits, Error will be nil and Complete will be true because the program
+// completed as expectedly by its signal handler. See "Signals (Bash Reference Manual)":
+// https://www.gnu.org/software/bash/manual/html_node/Signals.html
 type Status struct {
 	Cmd      string
 	PID      int
