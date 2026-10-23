@@ -1420,6 +1420,36 @@ func TestOptionsBeforeExecButStopped(t *testing.T) {
 	}
 }
 
+func TestStopWhileStarting(t *testing.T) {
+	// Bug: if Stop is called after Start but before the system has started
+	// the command (Status.PID not set yet), Stop returns ErrNotStarted and
+	// the cmd still runs. Calling Stop again returns nil and does not kill
+	// the cmd either because the cmd is flagged stopped. To test, call Stop
+	// right after Start and make sure the cmd is not run or is killed.
+	p := cmd.NewCmd("sleep", "5")
+	statusChan := p.Start()
+
+	err := p.Stop()
+	if err != nil && err != cmd.ErrNotStarted {
+		t.Errorf("got err %v, expected nil or cmd.ErrNotStarted", err)
+	}
+
+	var got cmd.Status
+	select {
+	case got = <-statusChan:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for cmd to be killed")
+	}
+
+	t.Logf("%+v\n", got)
+	if got.Complete {
+		t.Error("got Complete true, expected false")
+	}
+	if got.Exit != -1 {
+		t.Errorf("got Exit %d, expected -1", got.Exit)
+	}
+}
+
 func TestCmdLineBufferIncrease(t *testing.T) {
 	lineContent := cmd.DEFAULT_LINE_BUFFER_SIZE * 2
 	longLine := make([]byte, lineContent) // "AAA..."

@@ -304,10 +304,7 @@ func (c *Cmd) StartWithStdin(in io.Reader) <-chan Status {
 //
 // The second case can happen if Stop is called while executing Options.BeforeExec
 // functions. In this case, Status.Exit = -1 and other Status fields are zero values.
-// The third case is a race condition that might be fixed in future versions of
-// this package. It means you should not rely on Stop immediately after calling Start;
-// instead, call Start and wait for Status.PID to be set, which signals that the system
-// has completely started the command.
+// In the third case, the command is killed as soon as the system has started it.
 //
 // All other return errors are from the low-level system function for process termination.
 func (c *Cmd) Stop() error {
@@ -488,6 +485,16 @@ func (c *Cmd) run(in io.Reader) {
 	// //////////////////////////////////////////////////////////////////////
 	// Start command
 	// //////////////////////////////////////////////////////////////////////
+
+	// Return early if Stop called before starting the command, even if there
+	// are no beforeExecFuncs
+	c.Lock()
+	stopped := c.stopped
+	c.Unlock()
+	if stopped {
+		return
+	}
+
 	now := time.Now()
 	if err := cmd.Start(); err != nil {
 		c.Lock()
@@ -505,6 +512,11 @@ func (c *Cmd) run(in io.Reader) {
 	c.status.PID = cmd.Process.Pid // command is running
 	c.status.StartTs = now.UnixNano()
 	c.started = true
+	// Stop returned ErrNotStarted while the command was starting, and calling
+	// Stop again returns nil because the command is flagged stopped. Kill it here.
+	if c.stopped {
+		_ = terminateProcess(c.status.PID) // Wait below reports the outcome
+	}
 	c.Unlock()
 
 	// //////////////////////////////////////////////////////////////////////
