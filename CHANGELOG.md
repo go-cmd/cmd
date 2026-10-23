@@ -2,6 +2,11 @@
 
 ## v1.4
 
+### v1.4.4 (2026-10-23)
+
+* Fixed bug: Stop doesn't kill command while it's starting (PR #119) (@yusuke-koyoshi)
+* Updated test matrix to go1.25, go1.26, and go1.27
+
 ### v1.4.3 (2024-06-23)
 
 * Fixed issue 94: Command is still executed if Stop() is called during BeforeExec hooks

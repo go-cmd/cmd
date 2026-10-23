@@ -1,3 +1,5 @@
 #!/bin/sh
-go test -coverprofile=coverage.out
-go tool cover -html=coverage.out
+export GTK_MODULES="" # avoid Ubuntu/Firefox warning
+go test -coverprofile=coverage.out "$@"
+go tool cover -html=coverage.out -o coverage.html
+open coverage.html

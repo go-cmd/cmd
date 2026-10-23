@@ -1,3 +1,4 @@
 *.swp
 *.out
 vendor
+coverage.html
