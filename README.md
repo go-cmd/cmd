@@ -54,7 +54,7 @@ That's it, only three methods: `Start`, `Stop`, and `Status`. When possible, it'
 1. Real-time status
 1. Complete and consolidated return
 1. Proper process termination
-1. _100%_ test coverage, no race conditions
+1. 99% test coverage, no race conditions
 
 ### Channel-based fire and forget
 
